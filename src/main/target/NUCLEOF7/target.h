@@ -38,7 +38,6 @@
 #define USE_ACC
 #define USE_FAKE_ACC
 #define USE_ACC_MPU6050
-#define ACC_1_ALIGN       CW270_DEG
 
 #define USE_GYRO
 #define USE_FAKE_GYRO
@@ -62,6 +61,9 @@
 #define USE_BARO
 #define USE_FAKE_BARO
 #define USE_BARO_MS5611
+#define USE_BARO_SPI_BMP388
+#define BARO_SPI_INSTANCE       SPI1
+#define BARO_CS_PIN             SPI1_NSS_PIN
 
 #define USABLE_TIMER_CHANNEL_COUNT 11
 
@@ -130,6 +132,16 @@
 #define SDCARD_SPI_INSTANCE                 SPI4
 #define SDCARD_SPI_CS_PIN                   SPI4_NSS_PIN
 #define SPI4_TX_DMA_OPT                     0     // DMA 2 Stream 1 Channel 4
+
+#define USE_FLASHFS
+#define USE_FLASH_CHIP
+#define USE_FLASH_M25P16
+#define USE_FLASH_W25N01G          // 1Gb NAND flash support
+#define USE_FLASH_W25M             // Stacked die support
+#define USE_FLASH_W25M512          // 512Kb (256Kb x 2 stacked) NOR flash support
+#define USE_FLASH_W25M02G          // 2Gb (1Gb x 2 stacked) NAND flash support
+#define FLASH_SPI_INSTANCE      SPI4
+#define FLASH_CS_PIN            PE10
 
 #define USE_I2C
 #define USE_I2C_DEVICE_1

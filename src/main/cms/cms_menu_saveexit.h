@@ -20,4 +20,4 @@
 
 #pragma once
 
-extern CMS_Menu cmsx_menuSaveExit;
+CMS_Menu *getSaveExitMenu(void);

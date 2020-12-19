@@ -29,26 +29,23 @@
 
 #include "common/maths.h"
 
-#include "pg/pg.h"
-#include "pg/pg_ids.h"
-#include "pg/rx.h"
-#include "pg/rx_spi.h"
-
-#include "drivers/rx/rx_cc2500.h"
 #include "drivers/io.h"
+#include "drivers/rx/rx_cc2500.h"
+#include "drivers/rx/rx_spi.h"
 #include "drivers/time.h"
 
-#include "fc/config.h"
+#include "config/config.h"
 
+#include "pg/rx.h"
+#include "pg/rx_spi.h"
+#include "pg/rx_spi_cc2500.h"
+
+#include "rx/cc2500_common.h"
 #include "rx/rx.h"
 #include "rx/rx_spi.h"
 #include "rx/rx_spi_common.h"
 
-#include "rx/cc2500_common.h"
-#include "rx/cc2500_frsky_common.h"
-#include "rx/cc2500_sfhss.h"
-
-//void cliPrintLinef(const char *format, ...);
+#include "cc2500_sfhss.h"
 
 #define BIND_CH 15
 #define SFHSS_PACKET_LEN   15
@@ -84,47 +81,59 @@ static timeMs_t timeTunedMs;
 static int8_t bindOffset_max = 0;
 static int8_t bindOffset_min = 0;
 
+const cc2500RegisterConfigElement_t cc2500SfhssConfigPart1[] =
+{
+    { CC2500_02_IOCFG0,   0x01 },
+    { CC2500_03_FIFOTHR,  0x07 },
+    { CC2500_04_SYNC1,    0xD3 },
+    { CC2500_05_SYNC0,    0x91 },
+    { CC2500_06_PKTLEN,   0x0D },
+    { CC2500_07_PKTCTRL1, 0x04 },
+    { CC2500_08_PKTCTRL0, 0x0C },
+    { CC2500_09_ADDR,     0x29 },
+    { CC2500_0B_FSCTRL1,  0x06 }
+};
+
+const cc2500RegisterConfigElement_t cc2500SfhssConfigPart2[] =
+{
+    { CC2500_0D_FREQ2,    0x5C },
+    { CC2500_0E_FREQ1,    0x4E },
+    { CC2500_0F_FREQ0,    0xC4 },
+    { CC2500_10_MDMCFG4,  0x7C },
+    { CC2500_11_MDMCFG3,  0x43 },
+    { CC2500_12_MDMCFG2,  0x03 },
+    { CC2500_13_MDMCFG1,  0x23 },
+    { CC2500_14_MDMCFG0,  0x3B },
+    { CC2500_15_DEVIATN,  0x44 },
+    { CC2500_17_MCSM1,    0x0F },
+    { CC2500_18_MCSM0,    0x08 },
+    { CC2500_19_FOCCFG,   0x1D },
+    { CC2500_1A_BSCFG,    0x6C },
+    { CC2500_1B_AGCCTRL2, 0x03 },
+    { CC2500_1C_AGCCTRL1, 0x40 },
+    { CC2500_1D_AGCCTRL0, 0x91 },
+    { CC2500_21_FREND1,   0x56 },
+    { CC2500_22_FREND0,   0x10 },
+    { CC2500_23_FSCAL3,   0xA9 },
+    { CC2500_24_FSCAL2,   0x0A },
+    { CC2500_25_FSCAL1,   0x00 },
+    { CC2500_26_FSCAL0,   0x11 },
+    { CC2500_29_FSTEST,   0x59 },
+    { CC2500_2C_TEST2,    0x88 },
+    { CC2500_2D_TEST1,    0x31 },
+    { CC2500_2E_TEST0,    0x0B },
+    { CC2500_3E_PATABLE,  0xFF }
+};
+
 static void initialise()
 {
     cc2500Reset();
 
-    cc2500WriteReg(CC2500_02_IOCFG0,   0x01);
-    cc2500WriteReg(CC2500_03_FIFOTHR,  0x07);
-    cc2500WriteReg(CC2500_04_SYNC1,    0xD3);
-    cc2500WriteReg(CC2500_05_SYNC0,    0x91);
-    cc2500WriteReg(CC2500_06_PKTLEN,   0x0D);
-    cc2500WriteReg(CC2500_07_PKTCTRL1, 0x04);
-    cc2500WriteReg(CC2500_08_PKTCTRL0, 0x0C);
-    cc2500WriteReg(CC2500_09_ADDR,     0x29);
-    cc2500WriteReg(CC2500_0B_FSCTRL1,  0x06);
-    cc2500WriteReg(CC2500_0C_FSCTRL0,  (rxFrSkySpiConfigMutable()->bindOffset));
-    cc2500WriteReg(CC2500_0D_FREQ2,    0x5C);
-    cc2500WriteReg(CC2500_0E_FREQ1,    0x4E);
-    cc2500WriteReg(CC2500_0F_FREQ0,    0xC4);
-    cc2500WriteReg(CC2500_10_MDMCFG4,  0x7C);
-    cc2500WriteReg(CC2500_11_MDMCFG3,  0x43);
-    cc2500WriteReg(CC2500_12_MDMCFG2,  0x03);
-    cc2500WriteReg(CC2500_13_MDMCFG1,  0x23);
-    cc2500WriteReg(CC2500_14_MDMCFG0,  0x3B);
-    cc2500WriteReg(CC2500_15_DEVIATN,  0x44);
-    cc2500WriteReg(CC2500_17_MCSM1,    0x0F);
-    cc2500WriteReg(CC2500_18_MCSM0,    0x08);
-    cc2500WriteReg(CC2500_19_FOCCFG,   0x1D);
-    cc2500WriteReg(CC2500_1A_BSCFG,    0x6C);
-    cc2500WriteReg(CC2500_1B_AGCCTRL2, 0x03);
-    cc2500WriteReg(CC2500_1C_AGCCTRL1, 0x40);
-    cc2500WriteReg(CC2500_1D_AGCCTRL0, 0x91);
-    cc2500WriteReg(CC2500_21_FREND1,   0x56);
-    cc2500WriteReg(CC2500_22_FREND0,   0x10);
-    cc2500WriteReg(CC2500_23_FSCAL3,   0xA9);
-    cc2500WriteReg(CC2500_24_FSCAL2,   0x0A);
-    cc2500WriteReg(CC2500_25_FSCAL1,   0x00);
-    cc2500WriteReg(CC2500_26_FSCAL0,   0x11);
-    cc2500WriteReg(CC2500_29_FSTEST,   0x59);
-    cc2500WriteReg(CC2500_2C_TEST2,    0x88);
-    cc2500WriteReg(CC2500_2D_TEST1,    0x31);
-    cc2500WriteReg(CC2500_2E_TEST0,    0x0B);
-    cc2500WriteReg(CC2500_3E_PATABLE,  0xFF);
+    cc2500ApplyRegisterConfig(cc2500SfhssConfigPart1, sizeof(cc2500SfhssConfigPart1));
+
+    cc2500WriteReg(CC2500_0C_FSCTRL0,  rxCc2500SpiConfig()->bindOffset);
+
+    cc2500ApplyRegisterConfig(cc2500SfhssConfigPart2, sizeof(cc2500SfhssConfigPart2));
 
     for (unsigned c = 0; c < 30; c++) {
         //calibrate all channels
@@ -142,7 +151,7 @@ static bool sfhssRecv(uint8_t *packet)
 {
     uint8_t ccLen;
 
-    if (!(cc2500getGdo())) {
+    if (!(rxSpiGetExtiState())) {
         return false;
     }
     ccLen = cc2500ReadReg(CC2500_3B_RXBYTES | CC2500_READ_BURST) & 0x7F;
@@ -167,8 +176,8 @@ static bool sfhssPacketParse(uint8_t *packet, bool check_txid)
     }
 
     if (check_txid) {
-        if ((rxFrSkySpiConfigMutable()->bindTxId[0] != GET_TXID1(packet)) ||
-            (rxFrSkySpiConfigMutable()->bindTxId[1] != GET_TXID2(packet))) {
+        if ((rxCc2500SpiConfigMutable()->bindTxId[0] != GET_TXID1(packet)) ||
+            (rxCc2500SpiConfigMutable()->bindTxId[1] != GET_TXID2(packet))) {
             return false;           /* txid fail */
         }
     }
@@ -216,8 +225,8 @@ static bool tune1Rx(uint8_t *packet)
     if (sfhssRecv(packet)) {
         if (sfhssPacketParse(packet, false)) {
             if ((packet[SFHSS_PACKET_LEN - 1] & 0x7F) > 40 ) {    /* lqi */
-                rxFrSkySpiConfigMutable()->bindTxId[0] = GET_TXID1(packet);
-                rxFrSkySpiConfigMutable()->bindTxId[1] = GET_TXID2(packet);
+                rxCc2500SpiConfigMutable()->bindTxId[0] = GET_TXID1(packet);
+                rxCc2500SpiConfigMutable()->bindTxId[1] = GET_TXID2(packet);
                 bindOffset_max = bindOffset_min;
                 DEBUG_SET(DEBUG_RX_SFHSS_SPI, DEBUG_DATA_OFFSET_MAX, bindOffset_max);
                 cc2500Strobe(CC2500_SRX);
@@ -343,7 +352,7 @@ rx_spi_received_e sfhssSpiDataReceived(uint8_t *packet)
                     initTuneRx();
                     SET_STATE(STATE_BIND_TUNING1);    // retry
                 } else {
-                    rxFrSkySpiConfigMutable()->bindOffset = ((int16_t)bindOffset_max + (int16_t)bindOffset_min) / 2 ;
+                    rxCc2500SpiConfigMutable()->bindOffset = ((int16_t)bindOffset_max + (int16_t)bindOffset_min) / 2 ;
                     SET_STATE(STATE_BIND_COMPLETE);
                 }
             }
@@ -427,13 +436,15 @@ rx_spi_received_e sfhssSpiDataReceived(uint8_t *packet)
     return ret;
 }
 
-bool sfhssSpiInit(const rxSpiConfig_t *rxSpiConfig, rxRuntimeConfig_t *rxRuntimeConfig)
+bool sfhssSpiInit(const rxSpiConfig_t *rxSpiConfig, rxRuntimeState_t *rxRuntimeState, rxSpiExtiConfig_t *extiConfig)
 {
-    UNUSED(rxSpiConfig);
+    UNUSED(extiConfig);
+
+    rxSpiCommonIOInit(rxSpiConfig);
 
     cc2500SpiInit();
 
-    rxRuntimeConfig->channelCount = RC_CHANNEL_COUNT_SFHSS;
+    rxRuntimeState->channelCount = RC_CHANNEL_COUNT_SFHSS;
 
     start_time = millis();
     SET_STATE(STATE_INIT);

@@ -47,16 +47,12 @@ void pgResetFn_sdcardConfig(sdcardConfig_t *config)
     config->device = SPI_DEV_TO_CFG(SPIINVALID);
     config->mode = SDCARD_MODE_NONE;
 
-#ifdef USE_SDCARD_SDIO
-    config->mode = SDCARD_MODE_SDIO;
-    config->useDma = true;
-#endif
-
 #ifdef USE_SDCARD_SPI
+    // These settings do not work for Unified Targets
+    // They are only left in place to support legacy targets
     SPIDevice spidevice = spiDeviceByInstance(SDCARD_SPI_INSTANCE);
     config->device = SPI_DEV_TO_CFG(spidevice);
     config->chipSelectTag = IO_TAG(SDCARD_SPI_CS_PIN);
-    config->useDma = false;
 
     if (spidevice != SPIINVALID && config->chipSelectTag) {
         config->mode = SDCARD_MODE_SPI;
@@ -69,13 +65,6 @@ void pgResetFn_sdcardConfig(sdcardConfig_t *config)
     config->dmaIdentifier = (uint8_t)dmaGetIdentifier(SDCARD_DMA_STREAM_TX_FULL);
 #elif defined(SDCARD_DMA_CHANNEL_TX)
     config->dmaIdentifier = (uint8_t)dmaGetIdentifier(SDCARD_DMA_CHANNEL_TX);
-#endif
-#endif
-
-#ifdef USE_SDCARD_SDIO
-#if defined(SDIO_DMA)
-    config->dmaIdentifier = (uint8_t)dmaGetIdentifier(SDIO_DMA);
-    config->useDma = true;
 #endif
 #endif
 #endif // !USE_DMA_SPEC

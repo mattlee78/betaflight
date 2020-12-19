@@ -27,6 +27,7 @@
 #ifdef USE_TELEMETRY
 
 #include "common/utils.h"
+#include "common/unit.h"
 
 #include "pg/pg.h"
 #include "pg/pg_ids.h"
@@ -38,7 +39,7 @@
 
 #include "io/serial.h"
 
-#include "fc/config.h"
+#include "config/config.h"
 #include "fc/rc_modes.h"
 #include "fc/runtime_config.h"
 
@@ -54,11 +55,12 @@
 #include "telemetry/jetiexbus.h"
 #include "telemetry/mavlink.h"
 #include "telemetry/crsf.h"
+#include "telemetry/ghst.h"
 #include "telemetry/srxl.h"
 #include "telemetry/ibus.h"
 #include "telemetry/msp_shared.h"
 
-PG_REGISTER_WITH_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig, PG_TELEMETRY_CONFIG, 3);
+PG_REGISTER_WITH_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig, PG_TELEMETRY_CONFIG, 4);
 
 PG_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig,
     .telemetry_inverted = false,
@@ -66,7 +68,7 @@ PG_RESET_TEMPLATE(telemetryConfig_t, telemetryConfig,
     .gpsNoFixLatitude = 0,
     .gpsNoFixLongitude = 0,
     .frsky_coordinate_format = FRSKY_FORMAT_DMS,
-    .frsky_unit = FRSKY_UNIT_METRICS,
+    .frsky_unit = UNIT_METRIC,
     .frsky_vfas_precision = 0,
     .hottAlarmSoundInterval = 5,
     .pidValuesAsTelemetry = 0,
@@ -99,6 +101,9 @@ void telemetryInit(void)
 #endif
 #ifdef USE_TELEMETRY_MAVLINK
     initMAVLinkTelemetry();
+#endif
+#ifdef USE_TELEMETRY_GHST
+    initGhstTelemetry();
 #endif
 #ifdef USE_TELEMETRY_CRSF
     initCrsfTelemetry();
@@ -133,24 +138,24 @@ bool telemetryDetermineEnabledState(portSharing_e portSharing)
     return enabled;
 }
 
-bool telemetryCheckRxPortShared(const serialPortConfig_t *portConfig)
+bool telemetryCheckRxPortShared(const serialPortConfig_t *portConfig, const SerialRXType serialrxProvider)
 {
     if (portConfig->functionMask & FUNCTION_RX_SERIAL && portConfig->functionMask & TELEMETRY_SHAREABLE_PORT_FUNCTIONS_MASK &&
-        (rxConfig()->serialrx_provider == SERIALRX_SPEKTRUM1024 ||
-        rxConfig()->serialrx_provider == SERIALRX_SPEKTRUM2048 ||
-        rxConfig()->serialrx_provider == SERIALRX_SBUS ||
-        rxConfig()->serialrx_provider == SERIALRX_SUMD ||
-        rxConfig()->serialrx_provider == SERIALRX_SUMH ||
-        rxConfig()->serialrx_provider == SERIALRX_XBUS_MODE_B ||
-        rxConfig()->serialrx_provider == SERIALRX_XBUS_MODE_B_RJ01 ||
-        rxConfig()->serialrx_provider == SERIALRX_IBUS)) {
+        (serialrxProvider == SERIALRX_SPEKTRUM1024 ||
+        serialrxProvider == SERIALRX_SPEKTRUM2048 ||
+        serialrxProvider == SERIALRX_SBUS ||
+        serialrxProvider == SERIALRX_SUMD ||
+        serialrxProvider == SERIALRX_SUMH ||
+        serialrxProvider == SERIALRX_XBUS_MODE_B ||
+        serialrxProvider == SERIALRX_XBUS_MODE_B_RJ01 ||
+        serialrxProvider == SERIALRX_IBUS)) {
 
         return true;
     }
 #ifdef USE_TELEMETRY_IBUS
-    if (   portConfig->functionMask & FUNCTION_TELEMETRY_IBUS
+    if (portConfig->functionMask & FUNCTION_TELEMETRY_IBUS
         && portConfig->functionMask & FUNCTION_RX_SERIAL
-        && rxConfig()->serialrx_provider == SERIALRX_IBUS) {
+        && serialrxProvider == SERIALRX_IBUS) {
         // IBUS serial RX & telemetry
         return true;
     }
@@ -182,6 +187,9 @@ void telemetryCheckState(void)
 #endif
 #ifdef USE_TELEMETRY_CRSF
     checkCrsfTelemetryState();
+#endif
+#ifdef USE_TELEMETRY_GHST
+    checkGhstTelemetryState();
 #endif
 #ifdef USE_TELEMETRY_SRXL
     checkSrxlTelemetryState();
@@ -218,6 +226,9 @@ void telemetryProcess(uint32_t currentTime)
 #ifdef USE_TELEMETRY_CRSF
     handleCrsfTelemetry(currentTime);
 #endif
+#ifdef USE_TELEMETRY_GHST
+    handleGhstTelemetry(currentTime);
+#endif
 #ifdef USE_TELEMETRY_SRXL
     handleSrxlTelemetry(currentTime);
 #endif
@@ -228,6 +239,6 @@ void telemetryProcess(uint32_t currentTime)
 
 bool telemetryIsSensorEnabled(sensor_e sensor)
 {
-    return ~(telemetryConfigMutable()->disabledSensors) & sensor;
+    return ~(telemetryConfig()->disabledSensors) & sensor;
 }
 #endif

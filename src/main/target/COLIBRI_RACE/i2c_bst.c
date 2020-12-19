@@ -16,6 +16,10 @@
 #include "common/color.h"
 #include "common/maths.h"
 
+#include "config/config.h"
+#include "config/config_eeprom.h"
+#include "config/feature.h"
+
 #include "drivers/accgyro/accgyro.h"
 #include "drivers/compass/compass.h"
 #include "drivers/bus_i2c.h"
@@ -25,14 +29,20 @@
 #include "drivers/time.h"
 #include "drivers/timer.h"
 
-#include "fc/config.h"
 #include "fc/controlrate_profile.h"
 #include "fc/core.h"
 #include "fc/rc_adjustments.h"
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 
-#include "io/motors.h"
+#include "flight/position.h"
+#include "flight/failsafe.h"
+#include "flight/imu.h"
+#include "flight/mixer.h"
+#include "flight/pid.h"
+#include "flight/pid_init.h"
+#include "flight/servos.h"
+
 #include "io/servos.h"
 #include "io/gps.h"
 #include "io/gimbal.h"
@@ -41,6 +51,7 @@
 #include "io/flashfs.h"
 #include "io/beeper.h"
 
+#include "pg/motor.h"
 #include "pg/rx.h"
 
 #include "rx/rx.h"
@@ -58,16 +69,6 @@
 #include "sensors/rangefinder.h"
 
 #include "telemetry/telemetry.h"
-
-#include "flight/position.h"
-#include "flight/failsafe.h"
-#include "flight/imu.h"
-#include "flight/mixer.h"
-#include "flight/pid.h"
-#include "flight/servos.h"
-
-#include "config/config_eeprom.h"
-#include "config/feature.h"
 
 #include "bus_bst.h"
 #include "i2c_bst.h"
@@ -278,7 +279,7 @@ static bool bstSlaveProcessFeedbackCommand(uint8_t bstRequest)
             }
             break;
         case BST_STATUS:
-            bstWrite16(getTaskDeltaTime(TASK_GYROPID));
+            bstWrite16(getTaskDeltaTimeUs(TASK_PID));
 #ifdef USE_I2C
             bstWrite16(i2cGetErrorCounter());
 #else
@@ -313,7 +314,7 @@ static bool bstSlaveProcessFeedbackCommand(uint8_t bstRequest)
             bstWrite8(getCurrentPidProfileIndex());
             break;
         case BST_LOOP_TIME:
-            bstWrite16(getTaskDeltaTime(TASK_GYROPID));
+            bstWrite16(getTaskDeltaTimeUs(TASK_PID));
             break;
         case BST_RC_TUNING:
             bstWrite8(currentControlRateProfile->rcRates[FD_ROLL]);
@@ -369,7 +370,7 @@ static bool bstSlaveProcessFeedbackCommand(uint8_t bstRequest)
             bstWrite8(rxConfig()->rssi_channel);
             bstWrite8(0);
 
-            bstWrite16(compassConfig()->mag_declination / 10);
+            bstWrite16(0); // was mag_declination / 10
 
             bstWrite8(voltageSensorADCConfig(VOLTAGE_SENSOR_ADC_VBAT)->vbatscale);
             bstWrite8((batteryConfig()->vbatmincellvoltage + 5) / 10);
@@ -400,17 +401,15 @@ static bool bstSlaveProcessFeedbackCommand(uint8_t bstRequest)
 #ifdef USE_LED_STRIP
         case BST_LED_COLORS:
             for (i = 0; i < LED_CONFIGURABLE_COLOR_COUNT; i++) {
-                hsvColor_t *color = &ledStripConfigMutable()->colors[i];
-                bstWrite16(color->h);
-                bstWrite8(color->s);
-                bstWrite8(color->v);
+                bstWrite16(0);
+                bstWrite8(0);
+                bstWrite8(0);
             }
             break;
 
         case BST_LED_STRIP_CONFIG:
             for (i = 0; i < LED_MAX_STRIP_LENGTH; i++) {
-                const ledConfig_t *ledConfig = &ledStripConfig()->ledConfigs[i];
-                bstWrite32(*ledConfig);
+                bstWrite32(0);
             }
             break;
 #endif
@@ -421,14 +420,7 @@ static bool bstSlaveProcessFeedbackCommand(uint8_t bstRequest)
             bstWrite8(rcControlsConfig()->yaw_deadband);
             break;
         case BST_FC_FILTERS:
-            switch (gyroConfig()->gyro_hardware_lpf) { // Extra safety to prevent OSD setting corrupt values
-                case GYRO_HARDWARE_LPF_1KHZ_SAMPLE:
-                    bstWrite16(1);
-                    break;
-                default:
-                    bstWrite16(0);
-                    break;
-            }
+            bstWrite16(0);
             break;
         default:
             // we do not know how to handle the (valid) message, indicate error BST
@@ -526,7 +518,7 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
             rxConfigMutable()->rssi_channel = bstRead8();
             bstRead8();
 
-            compassConfigMutable()->mag_declination = bstRead16() * 10;
+            bstRead16(); // was mag_declination / 10
 
             voltageSensorADCConfigMutable(VOLTAGE_SENSOR_ADC_VBAT)->vbatscale = bstRead8();  // actual vbatscale as intended
             batteryConfigMutable()->vbatmincellvoltage = bstRead8() * 10;  // vbatlevel_warn1 in MWC2.3 GUI
@@ -534,13 +526,20 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
             batteryConfigMutable()->vbatwarningcellvoltage = bstRead8() * 10;  // vbatlevel when buzzer starts to alert
             break;
 
+#if defined(USE_ACC)
         case BST_ACC_CALIBRATION:
            if (!ARMING_FLAG(ARMED))
-               accSetCalibrationCycles(CALIBRATING_ACC_CYCLES);
+               accStartCalibration();
            break;
+#endif
+
+#if defined(USE_MAG)
         case BST_MAG_CALIBRATION:
-           if (!ARMING_FLAG(ARMED))
-               ENABLE_STATE(CALIBRATE_MAG);
+           if (!ARMING_FLAG(ARMED)) {
+               compassStartCalibration();
+           }
+#endif
+
            break;
         case BST_EEPROM_WRITE:
             if (ARMING_FLAG(ARMED)) {
@@ -552,8 +551,7 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
             readEEPROM();
             break;
         case BST_SET_FEATURE:
-            featureDisableAll();
-            featureEnable(bstRead32()); // features bitmap
+            featureConfigReplace(bstRead32()); // features bitmap
 #ifdef SERIALRX_UART
             if (featureIsEnabled(FEATURE_RX_SERIAL)) {
                 serialConfigMutable()->portConfigs[SERIALRX_UART].functionMask = FUNCTION_RX_SERIAL;
@@ -583,11 +581,10 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
         case BST_SET_LED_COLORS:
            //for (i = 0; i < CONFIGURABLE_COLOR_COUNT; i++) {
            {
-               i = bstRead8();
-               hsvColor_t *color = &ledStripConfigMutable()->colors[i];
-               color->h = bstRead16();
-               color->s = bstRead8();
-               color->v = bstRead8();
+               bstRead8();
+               bstRead16();
+               bstRead8();
+               bstRead8();
            }
            break;
         case BST_SET_LED_STRIP_CONFIG:
@@ -597,9 +594,11 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
                    ret = BST_FAILED;
                    break;
                }
-               ledConfig_t *ledConfig = &ledStripConfigMutable()->ledConfigs[i];
+#if defined(USE_LED_STRIP_STATUS_MODE)
+               ledConfig_t *ledConfig = &ledStripStatusModeConfigMutable()->ledConfigs[i];
                *ledConfig = bstRead32();
                reevaluateLedConfig();
+#endif
            }
            break;
 #endif
@@ -608,7 +607,7 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
             break;
         case BST_DISARM:
             if (ARMING_FLAG(ARMED)) {
-                    disarm();
+                disarm(DISARM_REASON_SERIAL_COMMAND);
             }
             setArmingDisabled(ARMING_DISABLED_BST);
             break;
@@ -622,14 +621,7 @@ static bool bstSlaveProcessWriteCommand(uint8_t bstWriteCommand)
             rcControlsConfigMutable()->yaw_deadband = bstRead8();
             break;
         case BST_SET_FC_FILTERS:
-            switch (bstRead16()) {
-                case 1:
-                    gyroConfigMutable()->gyro_hardware_lpf = GYRO_HARDWARE_LPF_1KHZ_SAMPLE;
-                    break;
-                default:
-                    gyroConfigMutable()->gyro_hardware_lpf = GYRO_HARDWARE_LPF_NORMAL;
-                    break;
-            }
+            bstRead16(); // 1KHz sampling no longer supported
             break;
 
         default:
@@ -784,8 +776,8 @@ static void bstMasterWrite16(uint16_t data)
 #ifdef USE_GPS
 static void bstMasterWrite32(uint32_t data)
 {
-    bstMasterWrite16((uint8_t)(data >> 16));
-    bstMasterWrite16((uint8_t)(data >> 0));
+    bstMasterWrite16((uint16_t)(data >> 16));
+    bstMasterWrite16((uint16_t)(data >> 0));
 }
 
 static int32_t lat = 0;

@@ -39,9 +39,15 @@ void systemReset(void)
     NVIC_SystemReset();
 }
 
-void systemResetToBootloader(void)
+void systemResetToBootloader(bootloaderRequestType_e requestType)
 {
-    persistentObjectWrite(PERSISTENT_OBJECT_BOOTMODE_REQUEST, BOOTLOADER_REQUEST_COOKIE);
+    switch (requestType) {
+    case BOOTLOADER_REQUEST_ROM:
+    default:
+        persistentObjectWrite(PERSISTENT_OBJECT_RESET_REASON, RESET_BOOTLOADER_REQUEST_ROM);
+
+        break;
+    }
 
     __disable_irq();
     NVIC_SystemReset();
@@ -54,14 +60,15 @@ typedef struct isrVector_s {
     resetHandler_t *resetHandler;
 } isrVector_t;
 
+// Used in the startup files for F4
 void checkForBootLoaderRequest(void)
 {
-    uint32_t bootloaderRequest = persistentObjectRead(PERSISTENT_OBJECT_BOOTMODE_REQUEST);
+    uint32_t bootloaderRequest = persistentObjectRead(PERSISTENT_OBJECT_RESET_REASON);
 
-    if (bootloaderRequest != BOOTLOADER_REQUEST_COOKIE) {
+    if (bootloaderRequest != RESET_BOOTLOADER_REQUEST_ROM) {
         return;
     }
-    persistentObjectWrite(PERSISTENT_OBJECT_BOOTMODE_REQUEST, 0);
+    persistentObjectWrite(PERSISTENT_OBJECT_RESET_REASON, RESET_NONE);
 
     extern isrVector_t system_isr_vector_table_base;
 
@@ -74,19 +81,6 @@ void enableGPIOPowerUsageAndNoiseReductions(void)
 {
 
     RCC_AHB1PeriphClockCmd(
-        RCC_AHB1Periph_GPIOA |
-        RCC_AHB1Periph_GPIOB |
-        RCC_AHB1Periph_GPIOC |
-        RCC_AHB1Periph_GPIOD |
-        RCC_AHB1Periph_GPIOE |
-#ifdef STM32F40_41xxx
-        RCC_AHB1Periph_GPIOF |
-        RCC_AHB1Periph_GPIOG |
-        RCC_AHB1Periph_GPIOH |
-        RCC_AHB1Periph_GPIOI |
-#endif
-        RCC_AHB1Periph_CRC |
-        RCC_AHB1Periph_FLITF |
         RCC_AHB1Periph_SRAM1 |
         RCC_AHB1Periph_SRAM2 |
         RCC_AHB1Periph_BKPSRAM |
@@ -141,32 +135,6 @@ void enableGPIOPowerUsageAndNoiseReductions(void)
         RCC_APB2Periph_TIM10 |
         RCC_APB2Periph_TIM11 |
         0, ENABLE);
-
-    GPIO_InitTypeDef GPIO_InitStructure;
-    GPIO_StructInit(&GPIO_InitStructure);
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP; // default is un-pulled input
-
-    GPIO_InitStructure.GPIO_Pin  = GPIO_Pin_All;
-    GPIO_InitStructure.GPIO_Pin &= ~(GPIO_Pin_11 | GPIO_Pin_12); // leave USB D+/D- alone
-
-    GPIO_InitStructure.GPIO_Pin &= ~(GPIO_Pin_13 | GPIO_Pin_14); // leave JTAG pins alone
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin  = GPIO_Pin_All;
-    GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin  = GPIO_Pin_All;
-    GPIO_Init(GPIOC, &GPIO_InitStructure);
-    GPIO_Init(GPIOD, &GPIO_InitStructure);
-    GPIO_Init(GPIOE, &GPIO_InitStructure);
-
-#ifdef STM32F40_41xxx
-    GPIO_Init(GPIOF, &GPIO_InitStructure);
-    GPIO_Init(GPIOG, &GPIO_InitStructure);
-    GPIO_Init(GPIOH, &GPIO_InitStructure);
-    GPIO_Init(GPIOI, &GPIO_InitStructure);
-#endif
-
 }
 
 bool isMPUSoftReset(void)

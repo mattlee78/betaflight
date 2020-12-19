@@ -79,6 +79,8 @@
 #define PG_IBUS_TELEMETRY_CONFIG 53 // CF 1.x
 //#define PG_VTX_CONFIG 54 // CF 1.x
 #define PG_GPS_RESCUE 55 // struct OK
+#define PG_POSITION 56
+#define PG_VTX_IO_CONFIG 57
 
 // Driver configuration
 #define PG_DRIVER_PWM_RX_CONFIG 100 // does not exist in betaflight
@@ -94,7 +96,7 @@
 
 // betaflight specific parameter group ids start at 500
 #define PG_BETAFLIGHT_START 500
-#define PG_MODE_ACTIVATION_OPERATOR_CONFIG 500
+//#define PG_MODE_ACTIVATION_OPERATOR_CONFIG 500 removed
 #define PG_OSD_CONFIG 501
 #define PG_BEEPER_CONFIG 502
 #define PG_BEEPER_DEV_CONFIG 503
@@ -117,7 +119,7 @@
 #define PG_SPI_PIN_CONFIG 520
 #define PG_ESCSERIAL_CONFIG 521
 #define PG_CAMERA_CONTROL_CONFIG 522
-#define PG_RX_FRSKY_SPI_CONFIG 523
+#define PG_RX_CC2500_SPI_CONFIG 523
 #define PG_MAX7456_CONFIG 524
 #define PG_FLYSKY_CONFIG 525
 #define PG_TIME_CONFIG 526
@@ -139,7 +141,16 @@
 #define PG_RX_SPEKTRUM_SPI_CONFIG 542
 #define PG_SERIAL_UART_CONFIG 543
 #define PG_RPM_FILTER_CONFIG 544
-#define PG_BETAFLIGHT_END 544
+#define PG_LED_STRIP_STATUS_MODE_CONFIG 545 // Used to hold the configuration for the LED_STRIP status mode (not built on targets with limited flash)
+#define PG_VTX_TABLE_CONFIG 546
+#define PG_STATS_CONFIG 547
+#define PG_QUADSPI_CONFIG 548
+#define PG_TIMER_UP_CONFIG 549 // used to store dmaopt for TIMx_UP channel
+#define PG_SDIO_PIN_CONFIG 550
+#define PG_PULLUP_CONFIG 551
+#define PG_PULLDOWN_CONFIG 552
+#define PG_MODE_ACTIVATION_CONFIG 553
+#define PG_BETAFLIGHT_END 553
 
 
 // OSD configuration (subject to change)

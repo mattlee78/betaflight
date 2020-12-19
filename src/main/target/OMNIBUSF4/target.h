@@ -32,6 +32,9 @@
 #define TARGET_BOARD_IDENTIFIER "XRF4"
 #elif defined(EXUAVF4PRO)
 #define TARGET_BOARD_IDENTIFIER "EXF4"
+#elif defined(SYNERGYF4)
+#define TARGET_BOARD_IDENTIFIER "SYN4"
+#define TARGET_MANUFACTURER_IDENTIFIER "KLEE"
 #else
 #define TARGET_BOARD_IDENTIFIER "OBF4"
 // Example of a manufacturer ID to be persisted as part of the config:
@@ -47,6 +50,8 @@
 #define USBD_PRODUCT_STRING "XRACERF4"
 #elif defined(EXUAVF4PRO)
 #define USBD_PRODUCT_STRING "ExuavF4Pro"
+#elif defined(SYNERGYF4)
+#define USBD_PRODUCT_STRING "SynergyF4"
 #else
 #define USBD_PRODUCT_STRING "OmnibusF4"
 #endif
@@ -57,7 +62,7 @@
 #define BEEPER_INVERTED
 
 #if defined(OMNIBUSF4SD) || defined(DYSF4PRO)
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 #endif
 
 #ifdef OMNIBUSF4SD
@@ -89,13 +94,12 @@
 
 #if defined(OMNIBUSF4SD)
 #define GYRO_1_ALIGN            CW270_DEG
-#define ACC_1_ALIGN             CW270_DEG
 #elif defined(XRACERF4) || defined(EXUAVF4PRO)
 #define GYRO_1_ALIGN            CW90_DEG
-#define ACC_1_ALIGN             CW90_DEG
+#elif defined(SYNERGYF4)
+#define GYRO_1_ALIGN            CW0_DEG_FLIP
 #else
 #define GYRO_1_ALIGN            CW180_DEG
-#define ACC_1_ALIGN             CW180_DEG
 #endif
 
 // Support for iFlight OMNIBUS F4 V3
@@ -109,16 +113,17 @@
 // Dummy defines
 #define GYRO_2_SPI_INSTANCE     GYRO_1_SPI_INSTANCE
 #define GYRO_2_CS_PIN           NONE
-#define GYRO_2_ALIGN            ALIGN_DEFAULT
 #define GYRO_2_EXTI_PIN         NONE
-#define ACC_2_ALIGN             ALIGN_DEFAULT
 
+#if !defined(SYNERGYF4) //No mag sensor on SYNERGYF4
 #define USE_MAG
 #define USE_MAG_HMC5883
 #define USE_MAG_QMC5883
 #define USE_MAG_LIS3MDL
 #define MAG_HMC5883_ALIGN       CW90_DEG
+#endif
 
+#if !defined(SYNERGYF4) //No baro sensor on SYNERGYF4
 #define USE_BARO
 #if defined(OMNIBUSF4SD)
 #define USE_BARO_SPI_BMP280
@@ -135,12 +140,11 @@
 #else
 #define DEFAULT_BARO_BMP280
 #endif
+#endif
 
 #define USE_MAX7456
 #define MAX7456_SPI_INSTANCE    SPI3
 #define MAX7456_SPI_CS_PIN      PA15
-#define MAX7456_SPI_CLK         (SPI_CLOCK_STANDARD) // 10MHz
-#define MAX7456_RESTORE_CLK     (SPI_CLOCK_FAST)
 
 // Globally configure flashfs and drivers for various flash chips
 #define USE_FLASHFS
@@ -181,7 +185,7 @@
 #define RX_SPI_DEFAULT_PROTOCOL RX_SPI_CYRF6936_DSM
 #define RX_SPI_INSTANCE         SPI3
 #define RX_NSS_PIN              PD2
-#define RX_IRQ_PIN              PA0 // instead of rssi input
+#define RX_SPI_EXTI_PIN         PA0 // instead of rssi input
 #endif
 
 #define USE_VCP
@@ -278,7 +282,11 @@
 #define RANGEFINDER_HCSR04_ECHO_PIN        PA8
 #define USE_RANGEFINDER_TF
 
+#if defined(SYNERGYF4)
+#define DEFAULT_FEATURES        (FEATURE_LED_STRIP | FEATURE_OSD | FEATURE_AIRMODE)
+#else
 #define DEFAULT_FEATURES        (FEATURE_OSD)
+#endif
 
 #define DEFAULT_VOLTAGE_METER_SOURCE VOLTAGE_METER_ADC
 #define DEFAULT_CURRENT_METER_SOURCE CURRENT_METER_ADC
@@ -294,4 +302,9 @@
 #else
 #define USABLE_TIMER_CHANNEL_COUNT 14
 #define USED_TIMERS ( TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(5) | TIM_N(8) | TIM_N(12) )
+#endif
+#if defined(SYNERGYF4)
+#define USE_PINIO
+#define PINIO1_PIN              PB15 // VTX power switcher
+#define USE_PINIOBOX
 #endif

@@ -22,6 +22,8 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "platform.h"
+
 #include "typeconversion.h"
 
 int isalnum(int c)
@@ -61,7 +63,7 @@ int toupper(int c)
 
 int strcasecmp(const char * s1, const char * s2)
 {
-    return strncasecmp(s1, s2, (size_t)-1);
+    return strncasecmp(s1, s2, (size_t)INT_MAX);
 }
 
 int strncasecmp(const char * s1, const char * s2, size_t n)

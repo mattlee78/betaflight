@@ -90,7 +90,6 @@ float accAverage[XYZ_AXIS_COUNT];
 
 uint32_t accTimeSum = 0;        // keep track for integration of acc
 int accSumCount = 0;
-float accVelScale;
 bool canUseGPSHeading = true;
 
 static float throttleAngleScale;
@@ -101,6 +100,8 @@ static float smallAngleCosZ = 0;
 static imuRuntimeConfig_t imuRuntimeConfig;
 
 STATIC_UNIT_TESTED float rMat[3][3];
+
+STATIC_UNIT_TESTED bool attitudeIsEstablished = false;
 
 // quaternion of sensor frame relative to earth frame
 STATIC_UNIT_TESTED quaternion q = QUATERNION_INITIALIZE;
@@ -119,6 +120,20 @@ PG_RESET_TEMPLATE(imuConfig_t, imuConfig,
     .dcm_ki = 0,                   // 0.003 * 10000
     .small_angle = 25,
 );
+
+static void imuQuaternionComputeProducts(quaternion *quat, quaternionProducts *quatProd)
+{
+    quatProd->ww = quat->w * quat->w;
+    quatProd->wx = quat->w * quat->x;
+    quatProd->wy = quat->w * quat->y;
+    quatProd->wz = quat->w * quat->z;
+    quatProd->xx = quat->x * quat->x;
+    quatProd->xy = quat->x * quat->y;
+    quatProd->xz = quat->x * quat->z;
+    quatProd->yy = quat->y * quat->y;
+    quatProd->yz = quat->y * quat->z;
+    quatProd->zz = quat->z * quat->z;
+}
 
 STATIC_UNIT_TESTED void imuComputeRotationMatrix(void){
     imuQuaternionComputeProducts(&q, &qP);
@@ -163,14 +178,12 @@ void imuConfigure(uint16_t throttle_correction_angle, uint8_t throttle_correctio
 
     fc_acc = calculateAccZLowPassFilterRCTimeConstant(5.0f); // Set to fix value
     throttleAngleScale = calculateThrottleAngleScale(throttle_correction_angle);
-    
+
     throttleAngleValue = throttle_correction_value;
 }
 
 void imuInit(void)
 {
-    accVelScale = 9.80665f * acc.dev.acc_1G_rec / 10000.0f;
-
 #ifdef USE_GPS
     canUseGPSHeading = true;
 #else
@@ -195,6 +208,7 @@ void imuResetAccelerationSum(void)
     accTimeSum = 0;
 }
 
+#if defined(USE_ACC)
 static float invSqrt(float x)
 {
     return 1.0f / sqrtf(x);
@@ -202,7 +216,7 @@ static float invSqrt(float x)
 
 static void imuMahonyAHRSupdate(float dt, float gx, float gy, float gz,
                                 bool useAcc, float ax, float ay, float az,
-                                bool useMag, float mx, float my, float mz,
+                                bool useMag,
                                 bool useCOG, float courseOverGround, const float dcmKpGain)
 {
     static float integralFBx = 0.0f,  integralFBy = 0.0f, integralFBz = 0.0f;    // integral error terms scaled by Ki
@@ -230,6 +244,9 @@ static void imuMahonyAHRSupdate(float dt, float gx, float gy, float gz,
 
 #ifdef USE_MAG
     // Use measured magnetic field vector
+    float mx = mag.magADC[X];
+    float my = mag.magADC[Y];
+    float mz = mag.magADC[Z];
     float recipMagNorm = sq(mx) + sq(my) + sq(mz);
     if (useMag && recipMagNorm > 0.01f) {
         // Normalise magnetometer measurement
@@ -257,9 +274,6 @@ static void imuMahonyAHRSupdate(float dt, float gx, float gy, float gz,
     }
 #else
     UNUSED(useMag);
-    UNUSED(mx);
-    UNUSED(my);
-    UNUSED(mz);
 #endif
 
     // Use measured acceleration vector
@@ -322,6 +336,8 @@ static void imuMahonyAHRSupdate(float dt, float gx, float gy, float gz,
 
     // Pre-compute rotation matrix from quaternion
     imuComputeRotationMatrix();
+
+    attitudeIsEstablished = true;
 }
 
 STATIC_UNIT_TESTED void imuUpdateEulerAngles(void)
@@ -340,14 +356,8 @@ STATIC_UNIT_TESTED void imuUpdateEulerAngles(void)
        attitude.values.yaw = lrintf((-atan2_approx(rMat[1][0], rMat[0][0]) * (1800.0f / M_PIf)));
     }
 
-    if (attitude.values.yaw < 0)
+    if (attitude.values.yaw < 0) {
         attitude.values.yaw += 3600;
-
-    // Update small angle state
-    if (rMat[2][2] > smallAngleCosZ) {
-        ENABLE_STATE(SMALL_ANGLE);
-    } else {
-        DISABLE_STATE(SMALL_ANGLE);
     }
 }
 
@@ -371,7 +381,7 @@ static bool imuIsAccelerometerHealthy(float *accAverage)
 //   - wait for a 250ms period of low gyro activity to ensure the craft is not moving
 //   - use a large dcmKpGain value for 500ms to allow the attitude estimate to quickly converge
 //   - reset the gain back to the standard setting
-float imuCalcKpGain(timeUs_t currentTimeUs, bool useAcc, float *gyroAverage)
+static float imuCalcKpGain(timeUs_t currentTimeUs, bool useAcc, float *gyroAverage)
 {
     static bool lastArmState = false;
     static timeUs_t gyroQuietPeriodTimeEnd = 0;
@@ -430,150 +440,8 @@ float imuCalcKpGain(timeUs_t currentTimeUs, bool useAcc, float *gyroAverage)
     return ret;
 }
 
-static void imuCalculateEstimatedAttitude(timeUs_t currentTimeUs)
-{
-    static timeUs_t previousIMUUpdateTime;
-    bool useAcc = false;
-    bool useMag = false;
-    bool useCOG = false; // Whether or not correct yaw via imuMahonyAHRSupdate from our ground course
-    float courseOverGround = 0; // To be used when useCOG is true.  Stored in Radians
-
-    const timeDelta_t deltaT = currentTimeUs - previousIMUUpdateTime;
-    previousIMUUpdateTime = currentTimeUs;
-
-#ifdef USE_MAG
-    if (sensors(SENSOR_MAG) && compassIsHealthy()
-#ifdef USE_GPS_RESCUE
-        && !gpsRescueDisableMag()
-#endif
-        ) {
-        useMag = true;
-    }
-#endif
 #if defined(USE_GPS)
-    if (!useMag && sensors(SENSOR_GPS) && STATE(GPS_FIX) && gpsSol.numSat >= 5 && gpsSol.groundSpeed >= GPS_COG_MIN_GROUNDSPEED) {
-        // Use GPS course over ground to correct attitude.values.yaw
-        if (STATE(FIXED_WING)) {
-            courseOverGround = DECIDEGREES_TO_RADIANS(gpsSol.groundCourse);
-            useCOG = true;
-        } else {
-            courseOverGround = DECIDEGREES_TO_RADIANS(gpsSol.groundCourse);
-
-            useCOG = true;
-        }
-
-        if (useCOG && shouldInitializeGPSHeading()) {
-            // Reset our reference and reinitialize quaternion.  This will likely ideally happen more than once per flight, but for now,
-            // shouldInitializeGPSHeading() returns true only once.
-            imuComputeQuaternionFromRPY(&qP, attitude.values.roll, attitude.values.pitch, gpsSol.groundCourse);
-
-            useCOG = false; // Don't use the COG when we first reinitialize.  Next time around though, yes.
-        }
-    }
-#endif
-
-#if defined(SIMULATOR_BUILD) && !defined(USE_IMU_CALC)
-    UNUSED(imuMahonyAHRSupdate);
-    UNUSED(imuIsAccelerometerHealthy);
-    UNUSED(useAcc);
-    UNUSED(useMag);
-    UNUSED(useCOG);
-    UNUSED(canUseGPSHeading);
-    UNUSED(courseOverGround);
-    UNUSED(deltaT);
-#else
-
-#if defined(SIMULATOR_BUILD) && defined(SIMULATOR_IMU_SYNC)
-//  printf("[imu]deltaT = %u, imuDeltaT = %u, currentTimeUs = %u, micros64_real = %lu\n", deltaT, imuDeltaT, currentTimeUs, micros64_real());
-    deltaT = imuDeltaT;
-#endif
-    float gyroAverage[XYZ_AXIS_COUNT];
-    gyroGetAccumulationAverage(gyroAverage);
-    if (accGetAccumulationAverage(accAverage)) {
-        useAcc = imuIsAccelerometerHealthy(accAverage);
-    }
-
-    imuMahonyAHRSupdate(deltaT * 1e-6f,
-                        DEGREES_TO_RADIANS(gyroAverage[X]), DEGREES_TO_RADIANS(gyroAverage[Y]), DEGREES_TO_RADIANS(gyroAverage[Z]),
-                        useAcc, accAverage[X], accAverage[Y], accAverage[Z],
-                        useMag, mag.magADC[X], mag.magADC[Y], mag.magADC[Z],
-                        useCOG, courseOverGround,  imuCalcKpGain(currentTimeUs, useAcc, gyroAverage));
-
-    imuUpdateEulerAngles();
-#endif
-}
-
-int calculateThrottleAngleCorrection(void)
-{
-    /*
-    * Use 0 as the throttle angle correction if we are inverted, vertical or with a
-    * small angle < 0.86 deg
-    * TODO: Define this small angle in config.
-    */
-    if (rMat[2][2] <= 0.015f) {
-        return 0;
-    }
-    int angle = lrintf(acos_approx(rMat[2][2]) * throttleAngleScale);
-    if (angle > 900)
-        angle = 900;
-    return lrintf(throttleAngleValue * sin_approx(angle / (900.0f * M_PIf / 2.0f)));
-}
-
-void imuUpdateAttitude(timeUs_t currentTimeUs)
-{
-    if (sensors(SENSOR_ACC) && acc.isAccelUpdatedAtLeastOnce) {
-        IMU_LOCK;
-#if defined(SIMULATOR_BUILD) && defined(SIMULATOR_IMU_SYNC)
-        if (imuUpdated == false) {
-            IMU_UNLOCK;
-            return;
-        }
-        imuUpdated = false;
-#endif
-        imuCalculateEstimatedAttitude(currentTimeUs);
-        IMU_UNLOCK;
-        
-        // Update the throttle correction for angle and supply it to the mixer
-        int throttleAngleCorrection = 0;
-        if (throttleAngleValue && (FLIGHT_MODE(ANGLE_MODE) || FLIGHT_MODE(HORIZON_MODE)) && ARMING_FLAG(ARMED)) {
-            throttleAngleCorrection = calculateThrottleAngleCorrection();
-        }
-        mixerSetThrottleAngleCorrection(throttleAngleCorrection);
-
-    } else {
-        acc.accADC[X] = 0;
-        acc.accADC[Y] = 0;
-        acc.accADC[Z] = 0;
-    }
-}
-
-bool shouldInitializeGPSHeading()
-{
-    static bool initialized = false;
-
-    if (!initialized) {
-        initialized = true;
-
-        return true;
-    }
-
-    return false;
-}
-
-float getCosTiltAngle(void)
-{
-    return rMat[2][2];
-}
-
-void getQuaternion(quaternion *quat)
-{
-   quat->w = q.w;
-   quat->x = q.x;
-   quat->y = q.y;
-   quat->z = q.z;
-}
-
-void imuComputeQuaternionFromRPY(quaternionProducts *quatProd, int16_t initialRoll, int16_t initialPitch, int16_t initialYaw)
+static void imuComputeQuaternionFromRPY(quaternionProducts *quatProd, int16_t initialRoll, int16_t initialPitch, int16_t initialYaw)
 {
     if (initialRoll > 1800) {
         initialRoll -= 3600;
@@ -614,6 +482,155 @@ void imuComputeQuaternionFromRPY(quaternionProducts *quatProd, int16_t initialRo
     quatProd->wz = q0 * q3;
 
     imuComputeRotationMatrix();
+
+    attitudeIsEstablished = true;
+}
+#endif
+
+static void imuCalculateEstimatedAttitude(timeUs_t currentTimeUs)
+{
+    static timeUs_t previousIMUUpdateTime;
+    bool useAcc = false;
+    bool useMag = false;
+    bool useCOG = false; // Whether or not correct yaw via imuMahonyAHRSupdate from our ground course
+    float courseOverGround = 0; // To be used when useCOG is true.  Stored in Radians
+
+    const timeDelta_t deltaT = currentTimeUs - previousIMUUpdateTime;
+    previousIMUUpdateTime = currentTimeUs;
+
+#ifdef USE_MAG
+    if (sensors(SENSOR_MAG) && compassIsHealthy()
+#ifdef USE_GPS_RESCUE
+        && !gpsRescueDisableMag()
+#endif
+        ) {
+        useMag = true;
+    }
+#endif
+#if defined(USE_GPS)
+    if (!useMag && sensors(SENSOR_GPS) && STATE(GPS_FIX) && gpsSol.numSat >= 5 && gpsSol.groundSpeed >= GPS_COG_MIN_GROUNDSPEED) {
+        // Use GPS course over ground to correct attitude.values.yaw
+        if (isFixedWing()) {
+            courseOverGround = DECIDEGREES_TO_RADIANS(gpsSol.groundCourse);
+            useCOG = true;
+        } else {
+            courseOverGround = DECIDEGREES_TO_RADIANS(gpsSol.groundCourse);
+
+            useCOG = true;
+        }
+
+        if (useCOG && shouldInitializeGPSHeading()) {
+            // Reset our reference and reinitialize quaternion.  This will likely ideally happen more than once per flight, but for now,
+            // shouldInitializeGPSHeading() returns true only once.
+            imuComputeQuaternionFromRPY(&qP, attitude.values.roll, attitude.values.pitch, gpsSol.groundCourse);
+
+            useCOG = false; // Don't use the COG when we first reinitialize.  Next time around though, yes.
+        }
+    }
+#endif
+
+#if defined(SIMULATOR_BUILD) && !defined(USE_IMU_CALC)
+    UNUSED(imuMahonyAHRSupdate);
+    UNUSED(imuIsAccelerometerHealthy);
+    UNUSED(useAcc);
+    UNUSED(useMag);
+    UNUSED(useCOG);
+    UNUSED(canUseGPSHeading);
+    UNUSED(courseOverGround);
+    UNUSED(deltaT);
+    UNUSED(imuCalcKpGain);
+#else
+
+#if defined(SIMULATOR_BUILD) && defined(SIMULATOR_IMU_SYNC)
+//  printf("[imu]deltaT = %u, imuDeltaT = %u, currentTimeUs = %u, micros64_real = %lu\n", deltaT, imuDeltaT, currentTimeUs, micros64_real());
+    deltaT = imuDeltaT;
+#endif
+    float gyroAverage[XYZ_AXIS_COUNT];
+    gyroGetAccumulationAverage(gyroAverage);
+
+    if (accGetAccumulationAverage(accAverage)) {
+        useAcc = imuIsAccelerometerHealthy(accAverage);
+    }
+
+    imuMahonyAHRSupdate(deltaT * 1e-6f,
+                        DEGREES_TO_RADIANS(gyroAverage[X]), DEGREES_TO_RADIANS(gyroAverage[Y]), DEGREES_TO_RADIANS(gyroAverage[Z]),
+                        useAcc, accAverage[X], accAverage[Y], accAverage[Z],
+                        useMag,
+                        useCOG, courseOverGround,  imuCalcKpGain(currentTimeUs, useAcc, gyroAverage));
+
+    imuUpdateEulerAngles();
+#endif
+}
+
+static int calculateThrottleAngleCorrection(void)
+{
+    /*
+    * Use 0 as the throttle angle correction if we are inverted, vertical or with a
+    * small angle < 0.86 deg
+    * TODO: Define this small angle in config.
+    */
+    if (getCosTiltAngle() <= 0.015f) {
+        return 0;
+    }
+    int angle = lrintf(acos_approx(getCosTiltAngle()) * throttleAngleScale);
+    if (angle > 900)
+        angle = 900;
+    return lrintf(throttleAngleValue * sin_approx(angle / (900.0f * M_PIf / 2.0f)));
+}
+
+void imuUpdateAttitude(timeUs_t currentTimeUs)
+{
+    if (sensors(SENSOR_ACC) && acc.isAccelUpdatedAtLeastOnce) {
+        IMU_LOCK;
+#if defined(SIMULATOR_BUILD) && defined(SIMULATOR_IMU_SYNC)
+        if (imuUpdated == false) {
+            IMU_UNLOCK;
+            return;
+        }
+        imuUpdated = false;
+#endif
+        imuCalculateEstimatedAttitude(currentTimeUs);
+        IMU_UNLOCK;
+
+        // Update the throttle correction for angle and supply it to the mixer
+        int throttleAngleCorrection = 0;
+        if (throttleAngleValue && (FLIGHT_MODE(ANGLE_MODE) || FLIGHT_MODE(HORIZON_MODE)) && ARMING_FLAG(ARMED)) {
+            throttleAngleCorrection = calculateThrottleAngleCorrection();
+        }
+        mixerSetThrottleAngleCorrection(throttleAngleCorrection);
+
+    } else {
+        acc.accADC[X] = 0;
+        acc.accADC[Y] = 0;
+        acc.accADC[Z] = 0;
+    }
+}
+#endif // USE_ACC
+
+bool shouldInitializeGPSHeading()
+{
+    static bool initialized = false;
+
+    if (!initialized) {
+        initialized = true;
+
+        return true;
+    }
+
+    return false;
+}
+
+float getCosTiltAngle(void)
+{
+    return rMat[2][2];
+}
+
+void getQuaternion(quaternion *quat)
+{
+   quat->w = q.w;
+   quat->x = q.x;
+   quat->y = q.y;
+   quat->z = q.z;
 }
 
 #ifdef SIMULATOR_BUILD
@@ -627,6 +644,7 @@ void imuSetAttitudeRPY(float roll, float pitch, float yaw)
 
     IMU_UNLOCK;
 }
+
 void imuSetAttitudeQuat(float w, float x, float y, float z)
 {
     IMU_LOCK;
@@ -637,6 +655,9 @@ void imuSetAttitudeQuat(float w, float x, float y, float z)
     q.z = z;
 
     imuComputeRotationMatrix();
+
+    attitudeIsEstablished = true;
+
     imuUpdateEulerAngles();
 
     IMU_UNLOCK;
@@ -653,20 +674,6 @@ void imuSetHasNewData(uint32_t dt)
     IMU_UNLOCK;
 }
 #endif
-
-void imuQuaternionComputeProducts(quaternion *quat, quaternionProducts *quatProd)
-{
-    quatProd->ww = quat->w * quat->w;
-    quatProd->wx = quat->w * quat->x;
-    quatProd->wy = quat->w * quat->y;
-    quatProd->wz = quat->w * quat->z;
-    quatProd->xx = quat->x * quat->x;
-    quatProd->xy = quat->x * quat->y;
-    quatProd->xz = quat->x * quat->z;
-    quatProd->yy = quat->y * quat->y;
-    quatProd->yz = quat->y * quat->z;
-    quatProd->zz = quat->z * quat->z;
-}
 
 bool imuQuaternionHeadfreeOffsetSet(void)
 {
@@ -715,4 +722,13 @@ void imuQuaternionHeadfreeTransformVectorEarthToBody(t_fp_vector_def *v)
     v->X = x;
     v->Y = y;
     v->Z = z;
+}
+
+bool isUpright(void)
+{
+#ifdef USE_ACC
+    return !sensors(SENSOR_ACC) || (attitudeIsEstablished && getCosTiltAngle() > smallAngleCosZ);
+#else
+    return true;
+#endif
 }

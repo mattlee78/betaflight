@@ -23,14 +23,13 @@
 #define TARGET_BOARD_IDENTIFIER "FXF7"
 #define USBD_PRODUCT_STRING  "FOXEER722DUAL"
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 #define LED0_PIN                PC15
 
 #define USE_BEEPER
 #define BEEPER_PIN              PA4
 #define BEEPER_INVERTED
 
-#define USE_DUAL_GYRO
 #define USE_EXTI
 #define USE_GYRO_EXTI
 #define GYRO_1_EXTI_PIN         PC4
@@ -53,10 +52,8 @@
 #define USE_ACC_SPI_MPU6500
 
 #define GYRO_1_ALIGN                CW270_DEG
-#define ACC_1_ALIGN                 CW270_DEG
 
 #define GYRO_2_ALIGN                CW180_DEG
-#define ACC_2_ALIGN                 CW180_DEG
 
 #define GYRO_CONFIG_USE_GYRO_DEFAULT GYRO_CONFIG_USE_GYRO_1 
 

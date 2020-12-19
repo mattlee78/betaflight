@@ -44,13 +44,13 @@ extern "C" {
     #include "drivers/system.h"
 
     #include "fc/runtime_config.h"
-    #include "fc/config.h"
+    #include "config/config.h"
     #include "flight/imu.h"
-
-    #include "interface/msp.h"
 
     #include "io/serial.h"
     #include "io/gps.h"
+
+    #include "msp/msp.h"
 
     #include "rx/rx.h"
     #include "rx/crsf.h"
@@ -63,6 +63,7 @@ extern "C" {
     #include "telemetry/smartport.h"
     #include "sensors/acceleration.h"
 
+    rssiSource_e rssiSource;
     bool handleMspFrame(uint8_t *frameStart, int frameLength, uint8_t *skipsBeforeResponse);
     bool sendMspReply(uint8_t payloadSize, mspResponseFnPtr responseFn);
     uint8_t sbufReadU8(sbuf_t *src);
@@ -254,8 +255,9 @@ extern "C" {
     attitudeEulerAngles_t attitude = { { 0, 0, 0 } };
 
     uint32_t micros(void) {return dummyTimeUs;}
+    uint32_t microsISR(void) {return micros();}
     serialPort_t *openSerialPort(serialPortIdentifier_e, serialPortFunction_e, serialReceiveCallbackPtr, void *, uint32_t, portMode_e, portOptions_e) {return NULL;}
-    serialPortConfig_t *findSerialPortConfig(serialPortFunction_e ) {return NULL;}
+    const serialPortConfig_t *findSerialPortConfig(serialPortFunction_e ) {return NULL;}
     bool isBatteryVoltageConfigured(void) { return true; }
     uint16_t getBatteryVoltage(void) {
         return testBatteryVoltage;
@@ -283,8 +285,11 @@ extern "C" {
 
     bool airmodeIsEnabled(void) {return true;}
 
-    mspResult_e mspFcProcessCommand(mspPacket_t *cmd, mspPacket_t *reply, mspPostProcessFnPtr *mspPostProcessFn) {
+    mspDescriptor_t mspDescriptorAlloc(void) {return 0;}
 
+    mspResult_e mspFcProcessCommand(mspDescriptor_t srcDesc, mspPacket_t *cmd, mspPacket_t *reply, mspPostProcessFnPtr *mspPostProcessFn) {
+
+        UNUSED(srcDesc);
         UNUSED(mspPostProcessFn);
 
         sbuf_t *dst = &reply->buf;

@@ -22,30 +22,12 @@
 
 #include <stdint.h>
 
-#define VTX_TRAMP_MIN_BAND 1
-#define VTX_TRAMP_MAX_BAND 5
-#define VTX_TRAMP_MIN_CHANNEL 1
-#define VTX_TRAMP_MAX_CHANNEL 8
-
-#define VTX_TRAMP_BAND_COUNT (VTX_TRAMP_MAX_BAND - VTX_TRAMP_MIN_BAND + 1)
-#define VTX_TRAMP_CHANNEL_COUNT (VTX_TRAMP_MAX_CHANNEL - VTX_TRAMP_MIN_CHANNEL + 1)
-
 #define VTX_TRAMP_POWER_COUNT 5
-#define VTX_TRAMP_DEFAULT_POWER 1
 
 #define VTX_TRAMP_MIN_FREQUENCY_MHZ 5000             //min freq in MHz
 #define VTX_TRAMP_MAX_FREQUENCY_MHZ 5999             //max freq in MHz
 
-extern uint8_t trampBand;
-extern uint8_t trampChannel;
-extern uint16_t trampPower;       // Actual transmitting power
-extern uint8_t trampPitMode;
-extern uint32_t trampCurFreq;
-extern uint16_t trampConfiguredPower; // Configured transmitting power
-extern int16_t trampTemperature;
-
 bool vtxTrampInit(void);
-bool trampCommitChanges(void);
-void trampSetPitMode(uint8_t onoff);
-void trampSetBandAndChannel(uint8_t band, uint8_t channel);
-void trampSetRFPower(uint16_t level);
+
+uint16_t vtxTrampGetCurrentActualPower();
+uint16_t vtxTrampGetCurrentTemp();

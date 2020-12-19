@@ -30,7 +30,7 @@
 #define TARGET_BOARD_IDENTIFIER "PIKO" // Furious FPV PIKOBLX
 #endif
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 #define REMAP_TIM16_DMA
 
 
@@ -55,7 +55,6 @@
 
 #define USE_ACC
 #define USE_ACC_SPI_MPU6000
-#define ACC_1_ALIGN             CW180_DEG
 
 #define GYRO_1_CS_PIN           PB12
 #define GYRO_1_SPI_INSTANCE     SPI2

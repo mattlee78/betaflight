@@ -54,7 +54,6 @@
 #define GYRO_1_ALIGN            CW270_DEG
 
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW270_DEG
 #else
 
 #define USE_MAG_DATA_READY_SIGNAL
@@ -64,7 +63,6 @@
 #define GYRO_1_ALIGN            CW180_DEG
 
 #define USE_ACC_MPU6500
-#define ACC_1_ALIGN             CW180_DEG
 
 #define USE_BARO
 #define USE_BARO_BMP280
@@ -122,8 +120,6 @@
 #define SOFTSERIAL1_RX_PIN      PA0 // PA0 / PAD3
 #define SOFTSERIAL1_TX_PIN      PA1 // PA1 / PAD4
 #endif
-
-#define RANGEFINDER_HCSR04_SOFTSERIAL1_EXCLUSIVE
 
 #define USE_SPI
 

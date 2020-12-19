@@ -1,51 +1,29 @@
-![Betaflight](https://raw.githubusercontent.com/wiki/betaflight/betaflight/images/betaflight/bf_logo.png)
+![Betaflight](docs/assets/images/bf_logo.png)
+
+[![Latest version](https://img.shields.io/github/v/release/betaflight/betaflight)](https://github.com/betaflight/betaflight/releases)  [![Build Status](https://travis-ci.com/betaflight/betaflight.svg?branch=master)](https://travis-ci.com/betaflight/betaflight) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Betaflight is flight controller software (firmware) used to fly multi-rotor craft and fixed wing craft.
 
 This fork differs from Baseflight and Cleanflight in that it focuses on flight performance, leading-edge feature additions, and wide target support.
 
-## News
-
-### Embargo on new targets for Betaflight 4.0
-
-As [announced earlier](https://github.com/betaflight/betaflight#betaflight-40), Betaflight 4.0 will introduce a radically new way to define targets. At the moment, we are making the changes necessary for this, and this requires some changes to how targets are defined in the 'legacy' way. Because of this, any pull request opened against `master` that introduces a new target is likely to be outdated by the time it has been reviewed. This means extra work for the target maintainer and the reviewers, for little or no benefit.
-
-Because of this, the following embargo is put in place:
-
-1. From 30/12/2018 on until the release of Betaflight 4.0 (scheduled for 01/04/2019), no pull requests that introduce new targets against `master` are accepted. Because any such pull requests will be outdated by the time 4.0 is released, they will be closed;
-
-2. During the time that 1. is in place, pull requests adding new targets (in 3.5 format) against the `3.5.x-maintenance` branch will be considered. This is an exception to the rule that all pull requests must be opened against `master`. This exception only applies to pull requests containing no other changes than a new target and a documentation page for the new target. These new targets will be included in upcoming 3.5 maintenance releases;
-
-3. Targets added under the exception in 2. will have to be ported into 4.0 before 4.0 is released. The format that these targets will have in 4.0 is yet to be determined, and instructions for porting the targets will have to be written, but we expect the maintainers of these targets to make themselves available to assist with this task when the time comes. Please follow the news and updates that are posted to https://betaflight.com/ or the [Betaflight GitHub page](https://github.com/betaflight/betaflight) to keep track of when action is required.
-
-
-### Betaflight 4.0
-
-As you might have learned from the [Betaflight GitHub page](https://github.com/betaflight/betaflight), our next release will be 4.0. Betaflight 4.0 will be the culmination of years of work that started in 2016 with the introduction of remappable resources, and it will drastically change the way how Betaflight is built and distributed. To you as the user, not much in how you download and install the Betaflight firmware will change, but you will get some noticeable improvements:
-
-- we’ll have to spend less time on maintaining and releasing the firmware, meaning that we’ll have more time to work on new and exciting features;
-- manufacturers will have an easy way to release custom configurations for all of their boards and ready-to-fly (including RX setup and tuning) craft based on original Betaflight firmware - you will no longer be stuck on using old firmware, or recreating your configuration from scratch;
-- the tinkerers amongst you will be able to share Betaflight firmware with your home built improvements amongst your friends without having to build and distribute separate targets for everybody’s board.
-
-*(These changes are planned for F4 and F7, F3’s flash space limitations mean we won’t be able to fit all of this in.)*
-
-We are almost there with the implementation of these changes, but since they are quite complex, and getting ‘almost there’ doesn’t buy us much, we have decided that we need to take more time to complete them, make sure the way users can use the firmware still works as expected, and properly test the new firmware. For this reason we have decided to **postpone the planned release date for Betaflight to 01 April 2019**. We will keep doing monthly releases of Betaflight 3.5 with bugfixes and new / updated targets in the meantime.
-
-
-To get the latest update from us, you can now also visit our webpage at <https://betaflight.com/>.
-
-In addition to the drastic changes mentioned above, Betaflight 4.0 will have a number of other exciting new features and improvements:
-
-- yet again improved flight performance;
-- 'Launch control' mode;
-- switchable profiles for the OSD layout.
-
 ## Events
 
 | Date  | Event |
 | - | - |
-| 01 March 2019 | Start of feature freeze / Release Candidate window for Betaflight 4.0 |
-| 01 April 2019 | Planned [release](https://github.com/betaflight/betaflight/milestone/20) date for Betaflight 4.0 |
+
+
+## News
+
+### Requirements for the submission of new and updated targets
+
+The following new requirements for pull requests adding new targets or modifying existing targets are put in place from now on:
+
+1. No new F3 based targets will be accepted;
+
+2. For any new target that is to be added, only a Unified Target config into https://github.com/betaflight/unified-targets/tree/master/configs/default needs to be submitted. See the [instructions](https://github.com/betaflight/betaflight/blob/master/docs/TargetMaintenance/CreatingAUnifiedTarget.md) for how to create a Unified Target configuration. If there is no Unified Target for the MCU type of the new target (see instructions above), then a 'legacy' format target definition into `src/main/target/` has to be submitted as well;
+
+3. For changes to existing targets, the change needs to be applied to the Unified Target config in https://github.com/betaflight/unified-targets/tree/master/configs/default. If no Unified Target configuration for the target exists, a new Unified Target configuration will have to be created and submitted. If there is no Unified Target for the MCU type of the new target (see instructions above), then an update to the 'legacy' format target definition in `src/main/target/` has to be submitted alongside the update to the Unified Target configuration.
+
 
 ## Features
 
@@ -70,39 +48,45 @@ Betaflight has the following features:
 
 See: https://github.com/betaflight/betaflight/wiki
 
-## IRC Support and Developers Channel
+## Support and Developers Channel
 
 There's a dedicated Slack chat channel here:
 
 https://slack.betaflight.com/
 
+We also have a Facebook Group. Join us to get a place to talk about Betaflight, ask configuration questions, or just hang out with fellow pilots.
+
+https://www.facebook.com/groups/betaflightgroup/
+
 Etiquette: Don't ask to ask and please wait around long enough for a reply - sometimes people are out flying, asleep or at work and can't answer immediately.
 
 ## Configuration Tool
 
-To configure Betaflight you should use the Betaflight-configurator GUI tool (Windows/OSX/Linux) that can be found here:
+To configure Betaflight you should use the Betaflight-configurator GUI tool (Windows/OSX/Linux) which can be found here:
 
-https://chrome.google.com/webstore/detail/betaflight-configurator/kdaghagfopacdngbohiknlhcocjccjao
-
-The source for it is here:
-
-https://github.com/betaflight/betaflight-configurator
+https://github.com/betaflight/betaflight-configurator/releases/latest
 
 ## Contributing
 
-Contributions are welcome and encouraged.  You can contribute in many ways:
+Contributions are welcome and encouraged. You can contribute in many ways:
 
-* Documentation updates and corrections.
+* implement a new feature in the firmware or in configurator (see [below](#Developers));
+* documentation updates and corrections;
 * How-To guides - received help? Help others!
-* Bug reporting & fixes.
-* New feature ideas & suggestions.
+* bug reporting & fixes;
+* new feature ideas & suggestions;
+* provide a new translation for configurator, or help us maintain the existing ones (see [below](#Translators)).
 
-The best place to start is the Betaflight Slack (registration [here](https://slack.betaflight.com/). Next place is the github issue tracker:
+The best place to start is the Betaflight Slack (registration [here](https://slack.betaflight.com/)). Next place is the github issue tracker:
 
 https://github.com/betaflight/betaflight/issues
 https://github.com/betaflight/betaflight-configurator/issues
 
-Before creating new issues please check to see if there is an existing one, search first otherwise you waste peoples time when they could be coding instead!
+Before creating new issues please check to see if there is an existing one, search first otherwise you waste people's time when they could be coding instead!
+
+If you want to contribute to our efforts financially, please consider making a donation to us through [PayPal](https://paypal.me/betaflight).
+
+If you want to contribute financially on an ongoing basis, you should consider becoming a patron for us on [Patreon](https://www.patreon.com/betaflight).
 
 ## Developers
 
@@ -111,9 +95,19 @@ Before starting to write code, please read our [development guidelines](docs/dev
 
 TravisCI is used to run automatic builds
 
-https://travis-ci.org/betaflight/betaflight
+https://travis-ci.com/betaflight/betaflight
 
-[![Build Status](https://travis-ci.org/betaflight/betaflight.svg?branch=master)](https://travis-ci.org/betaflight/betaflight)
+## Translators
+
+We want to make Betaflight accessible for pilots who are not fluent in English, and for this reason we are currently maintaining translations into 18 languages for Betaflight Configurator: Català, Deutsch, Español, Euskera, Français, Galego, Hrvatski, Bahasa Indonesia, Italiano, 日本語, 한국어, Latviešu, Português, Português Brasileiro, polski, Русский язык, Svenska, 简体中文.
+We have got a team of volunteer translators who do this work, but additional translators are always welcome to share the workload, and we are keen to add additional languages. If you would like to help us with translations, you have got the following options:
+- if you help by suggesting some updates or improvements to translations in a language you are familiar with, head to [crowdin](https://crowdin.com/project/betaflight-configurator) and add your suggested translations there;
+- if you would like to start working on the translation for a new language, or take on responsibility for proof-reading the translation for a language you are very familiar with, please head to the Betaflight Slack (registration [here](https://slack.betaflight.com/)), and join the '#team\_translation' channel - the people in there can help you to get a new language added, or set you up as a proof reader.
+
+## Hardware Issues
+
+Betaflight does not manufacture or distribute their own hardware. While we are collaborating with and supported by a number of manufacturers, we do not do any kind of hardware support.
+If you encounter any hardware issues with your flight controller or another component, please contact the manufacturer or supplier of your hardware, or check RCGroups https://rcgroups.com/forums/showthread.php?t=2464844 to see if others with the same problem have found a solution.
 
 ## Betaflight Releases
 

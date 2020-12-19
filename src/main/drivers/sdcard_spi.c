@@ -49,11 +49,11 @@
 // Chosen so that CMD8 will have the same CRC as CMD0:
 #define SDCARD_IF_COND_CHECK_PATTERN                0xAB
 
-/* SPI_CLOCK_INITIALIZATION (256) is the slowest (Spec calls for under 400KHz) */
-#define SDCARD_SPI_INITIALIZATION_CLOCK_DIVIDER     SPI_CLOCK_INITIALIZATION
+/* Spec calls for under 400KHz */
+#define SDCARD_MAX_SPI_INIT_CLK_HZ     400000
 
 /* Operational speed <= 25MHz */
-#define SDCARD_SPI_FULL_SPEED_CLOCK_DIVIDER         SPI_CLOCK_FAST
+#define SDCARD_MAX_SPI_CLK_HZ          25000000
 
 #define SDCARD_SPI_MODE                             SPI_MODE0_POL_LOW_EDGE_1ST
 //#define SDCARD_SPI_MODE                             SPI_MODE3_POL_HIGH_EDGE_2ND
@@ -112,9 +112,9 @@ static void sdcard_reset(void)
 
     if (sdcard.state >= SDCARD_STATE_READY) {
 #ifdef USE_SPI_TRANSACTION
-        spiBusTransactionInit(&sdcard.busdev, SDCARD_SPI_MODE, SDCARD_SPI_INITIALIZATION_CLOCK_DIVIDER);
+        spiBusTransactionInit(&sdcard.busdev, SDCARD_SPI_MODE, spiCalculateDivider(SDCARD_MAX_SPI_INIT_CLK_HZ));
 #else
-        spiSetDivisor(sdcard.busdev.busdev_u.spi.instance, SDCARD_SPI_INITIALIZATION_CLOCK_DIVIDER);
+        spiSetDivisor(sdcard.busdev.busdev_u.spi.instance, spiCalculateDivider(SDCARD_MAX_SPI_INIT_CLK_HZ));
 #endif
     }
 
@@ -389,10 +389,10 @@ static void sdcard_sendDataBlockBegin(const uint8_t *buffer, bool multiBlockWrit
         init.DMA_BufferSize = SDCARD_BLOCK_SIZE;
         init.DMA_Mode = DMA_Mode_Normal;
 
-        DMA_DeInit(sdcard.dma->ref);
-        DMA_Init(sdcard.dma->ref, &init);
+        xDMA_DeInit(sdcard.dma->ref);
+        xDMA_Init(sdcard.dma->ref, &init);
 
-        DMA_Cmd(sdcard.dma->ref, ENABLE);
+        xDMA_Cmd(sdcard.dma->ref, ENABLE);
 
         SPI_I2S_DMACmd(sdcard.busdev.busdev_u.spi.instance, SPI_I2S_DMAReq_Tx, ENABLE);
 #endif
@@ -513,7 +513,7 @@ static void sdcardSpi_init(const sdcardConfig_t *config, const spiPinConfig_t *s
         dmaIdentifier_e dmaIdentifier = DMA_NONE;
 
 #ifdef USE_DMA_SPEC
-        const dmaChannelSpec_t *dmaChannelSpec = dmaGetChannelSpec(DMA_PERIPH_SPI_TX, config->device, spiConfig[spiDevice].txDmaopt);
+        const dmaChannelSpec_t *dmaChannelSpec = dmaGetChannelSpecByPeripheral(DMA_PERIPH_SPI_TX, config->device, spiConfig[spiDevice].txDmaopt);
 
         if (dmaChannelSpec) {
             dmaIdentifier = dmaGetIdentifier(dmaChannelSpec->ref);
@@ -542,20 +542,12 @@ static void sdcardSpi_init(const sdcardConfig_t *config, const spiPinConfig_t *s
     }
     sdcard.busdev.busdev_u.spi.csnPin = chipSelectIO;
 
-    if (config->cardDetectTag) {
-        sdcard.cardDetectPin = IOGetByTag(config->cardDetectTag);
-        sdcard.detectionInverted = config->cardDetectInverted;
-    } else {
-        sdcard.cardDetectPin = IO_NONE;
-        sdcard.detectionInverted = false;
-    }
-
     // Max frequency is initially 400kHz
 
 #ifdef USE_SPI_TRANSACTION
-    spiBusTransactionInit(&sdcard.busdev, SDCARD_SPI_MODE, SDCARD_SPI_INITIALIZATION_CLOCK_DIVIDER);
+    spiBusTransactionInit(&sdcard.busdev, SDCARD_SPI_MODE, spiCalculateDivider(SDCARD_MAX_SPI_INIT_CLK_HZ));
 #else
-    spiSetDivisor(sdcard.busdev.busdev_u.spi.instance, SDCARD_SPI_INITIALIZATION_CLOCK_DIVIDER);
+    spiSetDivisor(sdcard.busdev.busdev_u.spi.instance, spiCalculateDivider(SDCARD_MAX_SPI_INIT_CLK_HZ));
 #endif
 
     // SDCard wants 1ms minimum delay after power is applied to it
@@ -722,9 +714,9 @@ static bool sdcardSpi_poll(void)
                 // Now we're done with init and we can switch to the full speed clock (<25MHz)
 
 #ifdef USE_SPI_TRANSACTION
-                spiBusTransactionInit(&sdcard.busdev, SDCARD_SPI_MODE, SDCARD_SPI_FULL_SPEED_CLOCK_DIVIDER);
+                spiBusTransactionInit(&sdcard.busdev, SDCARD_SPI_MODE, spiCalculateDivider(SDCARD_MAX_SPI_CLK_HZ));
 #else
-                spiSetDivisor(sdcard.busdev.busdev_u.spi.instance, SDCARD_SPI_FULL_SPEED_CLOCK_DIVIDER);
+                spiSetDivisor(sdcard.busdev.busdev_u.spi.instance, spiCalculateDivider(SDCARD_MAX_SPI_CLK_HZ));
 #endif
 
                 sdcard.multiWriteBlocksRemain = 0;
@@ -757,14 +749,14 @@ static bool sdcardSpi_poll(void)
             }
 #else
 #ifdef STM32F4
-            if (sdcard.useDMAForTx && DMA_GetFlagStatus(sdcard.dma->ref, sdcard.dma->completeFlag) == SET) {
-                DMA_ClearFlag(sdcard.dma->ref, sdcard.dma->completeFlag);
+            if (sdcard.useDMAForTx && xDMA_GetFlagStatus(sdcard.dma->ref, sdcard.dma->completeFlag) == SET) {
+                xDMA_ClearFlag(sdcard.dma->ref, sdcard.dma->completeFlag);
 #else
             if (sdcard.useDMAForTx && DMA_GetFlagStatus(sdcard.dma->completeFlag) == SET) {
                 DMA_ClearFlag(sdcard.dma->completeFlag);
 #endif
 
-                DMA_Cmd(sdcard.dma->ref, DISABLE);
+                xDMA_Cmd(sdcard.dma->ref, DISABLE);
 
                 // Drain anything left in the Rx FIFO (we didn't read it during the write)
                 while (SPI_I2S_GetFlagStatus(sdcard.busdev.busdev_u.spi.instance, SPI_I2S_FLAG_RXNE) == SET) {

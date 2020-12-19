@@ -34,6 +34,8 @@
 #include "drivers/io.h"
 #include "drivers/time.h"
 
+// 10 MHz max SPI frequency
+#define LPS_MAX_SPI_CLK_HZ 10000000
 //====================================Registers Addresses=========================================//
 #define LPS_REF_P_XL    0x08
 #define LPS_REF_P_L     0x09
@@ -219,13 +221,19 @@ static void lpsOff(busDevice_t *busdev)
     lpsWriteCommand(busdev, LPS_CTRL1, 0x00 | (0x01 << 2));
 }
 
-static void lps_nothing(baroDev_t *baro)
+static void lpsNothing(baroDev_t *baro)
 {
     UNUSED(baro);
     return;
 }
 
-static void lps_read(baroDev_t *baro)
+static bool lpsNothingBool(baroDev_t *baro)
+{
+    UNUSED(baro);
+    return true;
+}
+
+static bool lpsRead(baroDev_t *baro)
 {
     uint8_t status = 0x00;
     lpsReadCommand(&baro->busdev, LPS_STATUS, &status, 1);
@@ -240,9 +248,11 @@ static void lps_read(baroDev_t *baro)
         rawP = 0;
         rawT = 0;
     }
+
+    return true;
 }
 
-static void lps_calculate(int32_t *pressure, int32_t *temperature)
+static void lpsCalculate(int32_t *pressure, int32_t *temperature)
 {
     *pressure = (int32_t)rawP * 100 / 4096;
     *temperature = (int32_t)rawT * 10 / 48 + 4250;
@@ -252,13 +262,18 @@ bool lpsDetect(baroDev_t *baro)
 {
     //Detect
     busDevice_t *busdev = &baro->busdev;
+
+    if (busdev->bustype != BUSTYPE_SPI) {
+        return false;
+    }
+
     IOInit(busdev->busdev_u.spi.csnPin, OWNER_BARO_CS, 0);
     IOConfigGPIO(busdev->busdev_u.spi.csnPin, IOCFG_OUT_PP);
     IOHi(busdev->busdev_u.spi.csnPin); // Disable
 #ifdef USE_SPI_TRANSACTION
-    spiBusTransactionInit(busdev, SPI_MODE3_POL_HIGH_EDGE_2ND, SPI_CLOCK_STANDARD); // Baro can work only on up to 10Mhz SPI bus
+    spiBusTransactionInit(busdev, SPI_MODE3_POL_HIGH_EDGE_2ND, spiCalculateDivider(LPS_MAX_SPI_CLK_HZ)); // Baro can work only on up to 10Mhz SPI bus
 #else
-    spiBusSetDivisor(busdev, SPI_CLOCK_STANDARD); // Baro can work only on up to 10Mhz SPI bus
+    spiBusSetDivisor(busdev, spiCalculateDivider(LPS_MAX_SPI_CLK_HZ)); // Baro can work only on up to 10Mhz SPI bus
 #endif
 
     uint8_t temp = 0x00;
@@ -277,16 +292,19 @@ bool lpsDetect(baroDev_t *baro)
 
     lpsReadCommand(busdev, LPS_CTRL1, &temp, 1);
 
+    baro->combined_read = true;
     baro->ut_delay = 1;
     baro->up_delay = 1000000 / 24;
-    baro->start_ut = lps_nothing;
-    baro->get_ut = lps_nothing;
-    baro->start_up = lps_nothing;
-    baro->get_up = lps_read;
-    baro->calculate = lps_calculate;
+    baro->start_ut = lpsNothing;
+    baro->get_ut = lpsNothingBool;
+    baro->read_ut = lpsNothingBool;
+    baro->start_up = lpsNothing;
+    baro->get_up = lpsRead;
+    baro->read_up = lpsNothingBool;
+    baro->calculate = lpsCalculate;
     uint32_t timeout = millis();
     do {
-        lps_read(baro);
+        lpsRead(baro);
         if ((millis() - timeout) > 500) return false;
     } while (rawT == 0 && rawP == 0);
     rawT = 0;

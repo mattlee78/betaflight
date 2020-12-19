@@ -28,7 +28,7 @@
 #define BEEPER_PIN              PB5
 #define BEEPER_INVERTED
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define INVERTER_PIN_UART1      PC0
 
@@ -44,7 +44,6 @@
 #define USE_ACC
 #define USE_ACC_SPI_MPU6000
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW0_DEG
 
 #define USE_GYRO_EXTI
 #define GYRO_1_EXTI_PIN         PC4
@@ -56,8 +55,6 @@
 #define USE_MAX7456
 #define MAX7456_SPI_INSTANCE    SPI3
 #define MAX7456_SPI_CS_PIN      SPI3_NSS_PIN
-#define MAX7456_SPI_CLK         (SPI_CLOCK_STANDARD)
-#define MAX7456_RESTORE_CLK     (SPI_CLOCK_FAST)
 
 #define ENABLE_BLACKBOX_LOGGING_ON_SPIFLASH_BY_DEFAULT
 #define USE_FLASHFS

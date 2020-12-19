@@ -39,13 +39,11 @@
 //#define DEBUG_ADC_CHANNELS
 
 adcOperatingConfig_t adcOperatingConfig[ADC_CHANNEL_COUNT];
-volatile uint16_t adcValues[ADC_CHANNEL_COUNT];
 
-#ifdef USE_ADC_INTERNAL
-uint16_t adcTSCAL1;
-uint16_t adcTSCAL2;
-int16_t  adcTSSlopeK;
-uint16_t adcVREFINTCAL;
+#if defined(STM32F7)
+volatile FAST_DATA_ZERO_INIT uint16_t adcValues[ADC_CHANNEL_COUNT];
+#else
+volatile uint16_t adcValues[ADC_CHANNEL_COUNT];
 #endif
 
 uint8_t adcChannelByTag(ioTag_t ioTag)
@@ -84,6 +82,8 @@ ADCDevice adcDeviceByInstance(ADC_TypeDef *instance)
 
 uint16_t adcGetChannel(uint8_t channel)
 {
+    adcGetChannelValues();
+
 #ifdef DEBUG_ADC_CHANNELS
     if (adcOperatingConfig[0].enabled) {
         debug[0] = adcValues[adcOperatingConfig[0].dmaIndex];
@@ -124,6 +124,29 @@ bool adcVerifyPin(ioTag_t tag, ADCDevice device)
 
     return false;
 }
+
+#ifdef USE_ADC_INTERNAL
+
+int32_t adcVREFINTCAL;      // ADC value (12-bit) of band gap with Vref = VREFINTCAL_VREF
+int32_t adcTSCAL1;
+int32_t adcTSCAL2;
+int32_t adcTSSlopeK;
+
+uint16_t adcInternalCompensateVref(uint16_t vrefAdcValue)
+{
+    // This is essentially a tuned version of
+    // __HAL_ADC_CALC_VREFANALOG_VOLTAGE(vrefAdcValue, ADC_RESOLUTION_12B);
+    return (uint16_t)((uint32_t)(adcVREFINTCAL * VREFINT_CAL_VREF) / vrefAdcValue);
+}
+
+int16_t adcInternalComputeTemperature(uint16_t tempAdcValue, uint16_t vrefValue)
+{
+    // This is essentially a tuned version of
+    // __HAL_ADC_CALC_TEMPERATURE(vrefValue, tempAdcValue, ADC_RESOLUTION_12B);
+
+    return ((((int32_t)((tempAdcValue * vrefValue) / TEMPSENSOR_CAL_VREFANALOG) - adcTSCAL1) * adcTSSlopeK) + 500) / 1000 + TEMPSENSOR_CAL1_TEMP;
+}
+#endif // USE_ADC_INTERNAL
 
 #else
 uint16_t adcGetChannel(uint8_t channel)

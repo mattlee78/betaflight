@@ -26,6 +26,7 @@
 #define NVIC_PRIO_TIMER                    NVIC_BUILD_PRIORITY(1, 1)
 #define NVIC_PRIO_BARO_EXTI                NVIC_BUILD_PRIORITY(0x0f, 0x0f)
 #define NVIC_PRIO_SONAR_EXTI               NVIC_BUILD_PRIORITY(2, 0)  // maybe increase slightly
+#define NVIC_PRIO_DSHOT_DMA                NVIC_BUILD_PRIORITY(2, 1)
 #define NVIC_PRIO_TRANSPONDER_DMA          NVIC_BUILD_PRIORITY(3, 0)
 #define NVIC_PRIO_MPU_INT_EXTI             NVIC_BUILD_PRIORITY(0x0f, 0x0f)
 #define NVIC_PRIO_MAG_INT_EXTI             NVIC_BUILD_PRIORITY(0x0f, 0x0f)
@@ -64,6 +65,7 @@
 #define NVIC_PRIO_MAG_DATA_READY           NVIC_BUILD_PRIORITY(0x0f, 0x0f)
 #define NVIC_PRIO_CALLBACK                 NVIC_BUILD_PRIORITY(0x0f, 0x0f)
 #define NVIC_PRIO_MAX7456_DMA              NVIC_BUILD_PRIORITY(3, 0)
+#define NVIC_PRIO_SDIO_DMA                 NVIC_BUILD_PRIORITY(0, 0)
 
 #ifdef USE_HAL_DRIVER
 // utility macros to join/split priority

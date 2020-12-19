@@ -41,7 +41,7 @@ extern "C" {
     #include "drivers/serial.h"
     #include "drivers/system.h"
 
-    #include "fc/config.h"
+    #include "config/config.h"
     #include "fc/runtime_config.h"
 
     #include "flight/pid.h"
@@ -61,6 +61,7 @@ extern "C" {
     #include "telemetry/telemetry.h"
     #include "telemetry/msp_shared.h"
 
+    rssiSource_e rssiSource;
     bool airMode;
 
     uint16_t testBatteryVoltage = 0;
@@ -68,6 +69,9 @@ extern "C" {
     int32_t testmAhDrawn = 0;
 
     serialPort_t *telemetrySharedPort;
+
+    int getCrsfFrame(uint8_t *frame, crsfFrameType_e frameType);
+
     PG_REGISTER(batteryConfig_t, batteryConfig, PG_BATTERY_CONFIG, 0);
     PG_REGISTER(telemetryConfig_t, telemetryConfig, PG_TELEMETRY_CONFIG, 0);
     PG_REGISTER(systemConfig_t, systemConfig, PG_SYSTEM_CONFIG, 0);
@@ -216,9 +220,30 @@ TEST(TelemetryCrsfTest, TestFlightMode)
 {
     uint8_t frame[CRSF_FRAME_SIZE_MAX];
 
-    // nothing set, so ACRO mode
+    ENABLE_STATE(GPS_FIX);
+    ENABLE_STATE(GPS_FIX_HOME);
+
     airMode = false;
+
+    DISABLE_ARMING_FLAG(ARMED);
+
+    // nothing set, so ACRO mode
     int frameLen = getCrsfFrame(frame, CRSF_FRAMETYPE_FLIGHT_MODE);
+    EXPECT_EQ(6 + FRAME_HEADER_FOOTER_LEN, frameLen);
+    EXPECT_EQ(CRSF_SYNC_BYTE, frame[0]); // address
+    EXPECT_EQ(8, frame[1]); // length
+    EXPECT_EQ(0x21, frame[2]); // type
+    EXPECT_EQ('A', frame[3]);
+    EXPECT_EQ('C', frame[4]);
+    EXPECT_EQ('R', frame[5]);
+    EXPECT_EQ('O', frame[6]);
+    EXPECT_EQ('*', frame[7]);
+    EXPECT_EQ(0, frame[8]);
+    EXPECT_EQ(crfsCrc(frame, frameLen), frame[9]);
+
+    ENABLE_ARMING_FLAG(ARMED);
+
+    frameLen = getCrsfFrame(frame, CRSF_FRAMETYPE_FLIGHT_MODE);
     EXPECT_EQ(5 + FRAME_HEADER_FOOTER_LEN, frameLen);
     EXPECT_EQ(CRSF_SYNC_BYTE, frame[0]); // address
     EXPECT_EQ(7, frame[1]); // length
@@ -229,7 +254,6 @@ TEST(TelemetryCrsfTest, TestFlightMode)
     EXPECT_EQ('O', frame[6]);
     EXPECT_EQ(0, frame[7]);
     EXPECT_EQ(crfsCrc(frame, frameLen), frame[8]);
-
 
     enableFlightMode(ANGLE_MODE);
     EXPECT_EQ(ANGLE_MODE, FLIGHT_MODE(ANGLE_MODE));
@@ -292,6 +316,7 @@ gpsSolutionData_t gpsSol;
 void beeperConfirmationBeeps(uint8_t beepCount) {UNUSED(beepCount);}
 
 uint32_t micros(void) {return 0;}
+uint32_t microsISR(void) {return micros();}
 
 bool featureIsEnabled(uint32_t) {return true;}
 
@@ -305,10 +330,10 @@ serialPort_t *openSerialPort(serialPortIdentifier_e, serialPortFunction_e, seria
 void closeSerialPort(serialPort_t *) {}
 bool isSerialTransmitBufferEmpty(const serialPort_t *) { return true; }
 
-serialPortConfig_t *findSerialPortConfig(serialPortFunction_e) {return NULL;}
+const serialPortConfig_t *findSerialPortConfig(serialPortFunction_e) {return NULL;}
 
 bool telemetryDetermineEnabledState(portSharing_e) {return true;}
-bool telemetryCheckRxPortShared(const serialPortConfig_t *) {return true;}
+bool telemetryCheckRxPortShared(const serialPortConfig_t *, SerialRXType) {return true;}
 bool telemetryIsSensorEnabled(sensor_e) {return true;}
 
 portSharing_e determinePortSharing(const serialPortConfig_t *, serialPortFunction_e) {return PORTSHARING_NOT_SHARED;}

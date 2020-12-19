@@ -42,7 +42,6 @@
 
 #define USE_ACC
 #define USE_ACC_SPI_MPU6000
-#define ACC_1_ALIGN             CW270_DEG
 
 // MPU6000 interrupts
 #define USE_EXTI
@@ -76,7 +75,6 @@
 
 #define SOFTSERIAL1_RX_PIN      PB0  // PWM 5
 #define SOFTSERIAL1_TX_PIN      PB1  // PWM 6
-#define RANGEFINDER_HCSR04_SOFTSERIAL1_EXCLUSIVE
 
 #define USE_I2C
 #define USE_I2C_DEVICE_1

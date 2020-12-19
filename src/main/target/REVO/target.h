@@ -99,8 +99,6 @@
 
 #define GYRO_1_ALIGN            CW270_DEG
 #define GYRO_2_ALIGN            CW270_DEG
-#define ACC_1_ALIGN             CW270_DEG
-#define ACC_2_ALIGN             CW270_DEG
 
 #elif defined(SOULF4)
 
@@ -108,7 +106,6 @@
 #define GYRO_1_ALIGN            CW180_DEG
 
 #define USE_ACC_SPI_MPU6000
-#define ACC_1_ALIGN             CW180_DEG
 
 #define GYRO_1_CS_PIN           PA4
 #define GYRO_1_SPI_INSTANCE     SPI1
@@ -119,7 +116,6 @@
 #define GYRO_1_ALIGN            CW0_DEG
 
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW0_DEG
 
 #define GYRO_1_CS_PIN           PA4
 #define GYRO_1_SPI_INSTANCE     SPI1
@@ -132,7 +128,6 @@
 #define GYRO_1_SPI_INSTANCE     SPI1
 
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW0_DEG
 
 
 #else
@@ -144,7 +139,6 @@
 #define GYRO_1_CS_PIN           PA4
 #define GYRO_1_SPI_INSTANCE     SPI1
 #define GYRO_1_ALIGN            CW270_DEG
-#define ACC_1_ALIGN             CW270_DEG
 
 #endif
 
@@ -157,12 +151,21 @@
 #if defined(ELINF405)
 
 #define USE_OSD
-#define DEFAULT_FEATURES        FEATURE_OSD
+#define DEFAULT_FEATURES        (FEATURE_OSD | FEATURE_SOFTSERIAL)
 #define USE_MAX7456
 #define MAX7456_SPI_INSTANCE    SPI2
 #define MAX7456_SPI_CS_PIN      PC8
-#define MAX7456_SPI_CLK         (SPI_CLOCK_STANDARD)
-#define MAX7456_RESTORE_CLK     (SPI_CLOCK_FAST)
+
+#define USE_BARO
+#define USE_BARO_MS5611
+#define USE_BARO_BMP085
+#define USE_BARO_BMP280
+
+#define USE_MAG
+#define USE_MAG_HMC5883
+#define USE_MAG_QMC5883
+#define USE_MAG_AK8963
+#define USE_MAG_AK8975
 
 #else
 
@@ -240,8 +243,11 @@
 #define PINIO2_PIN              PC14
 
 #define DEFAULT_MIXER           MIXER_QUADX
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 #define USE_TARGET_CONFIG
+#define SOFTSERIAL1_TX_PIN      PC9
+#define SOFTSERIAL2_RX_PIN      PA8
+
 #else
 
 #define PINIO1_PIN              PC8 // DTR pin
@@ -259,7 +265,7 @@
 
 #define USE_ESCSERIAL
 #if defined(ELINF405)
-#define ESCSERIAL_TIMER_TX_PIN  PC6
+#define ESCSERIAL_TIMER_TX_PIN  PB6
 #else
 #define ESCSERIAL_TIMER_TX_PIN  PB14  // (HARDARE=0,PPM)
 #endif
@@ -315,6 +321,11 @@
 #define VBAT_ADC_PIN            PC3
 #endif
 
+#if defined(ELINF405)
+#define DEFAULT_CURRENT_METER_SOURCE CURRENT_METER_ADC
+#define DEFAULT_VOLTAGE_METER_SOURCE VOLTAGE_METER_ADC
+#endif
+
 #if defined(AIRBOTF4SD)
 #define RSSI_ADC_PIN            PA0
 #endif
@@ -340,7 +351,7 @@
 #define USABLE_TIMER_CHANNEL_COUNT 13
 #define USED_TIMERS             ( TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(5) | TIM_N(8) | TIM_N(12) )
 #elif defined(ELINF405)
-#define USABLE_TIMER_CHANNEL_COUNT 8
+#define USABLE_TIMER_CHANNEL_COUNT 9
 #define USED_TIMERS             ( TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) | TIM_N(8) | TIM_N(11) )
 #else
 #define USABLE_TIMER_CHANNEL_COUNT 12

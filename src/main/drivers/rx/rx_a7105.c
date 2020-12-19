@@ -27,47 +27,25 @@
 #ifdef USE_RX_FLYSKY
 
 #include "drivers/bus_spi.h"
-#include "drivers/exti.h"
 #include "drivers/io.h"
 #include "drivers/io_impl.h"
-#include "drivers/nvic.h"
 #include "drivers/rx/rx_a7105.h"
 #include "drivers/rx/rx_spi.h"
-#include "drivers/time.h"
 
-#ifdef RX_PA_TXEN_PIN
 static IO_t txEnIO = IO_NONE;
-#endif
 
-static IO_t rxIntIO = IO_NONE;
-static extiCallbackRec_t a7105extiCallbackRec;
-static volatile uint32_t timeEvent = 0;
-static volatile bool occurEvent = false;
+static bool consumeExti = true;
 
-void a7105extiHandler(extiCallbackRec_t* cb)
+void A7105Init(uint32_t id, IO_t txEnPin)
 {
-    UNUSED(cb);
-
-    if (IORead (rxIntIO) != 0) {
-        timeEvent = micros();
-        occurEvent = true;
+    if (txEnPin) {
+        txEnIO = txEnPin;
+        //TODO: Create resource for this if it ever gets used
+        IOInit(txEnIO, OWNER_RX_SPI_CC2500_TX_EN, 0);
+        IOConfigGPIO(txEnIO, IOCFG_OUT_PP);
+    } else {
+        txEnIO = IO_NONE;
     }
-}
-
-void A7105Init(uint32_t id)
-{
-    spiDeviceByInstance(RX_SPI_INSTANCE);
-    rxIntIO = IOGetByTag(IO_TAG(RX_IRQ_PIN)); /* config receiver IRQ pin */
-    IOInit(rxIntIO, OWNER_RX_SPI_CS, 0);
-    EXTIHandlerInit(&a7105extiCallbackRec, a7105extiHandler);
-    EXTIConfig(rxIntIO, &a7105extiCallbackRec, NVIC_PRIO_MPU_INT_EXTI, IOCFG_IPD, EXTI_TRIGGER_RISING);
-    EXTIEnable(rxIntIO, false);
-
-#ifdef RX_PA_TXEN_PIN
-    txEnIO = IOGetByTag(IO_TAG(RX_PA_TXEN_PIN));
-    IOInit(txEnIO, OWNER_RX_SPI_CS, 0);
-    IOConfigGPIO(txEnIO, IOCFG_OUT_PP);
-#endif
 
     A7105SoftReset();
     A7105WriteID(id);
@@ -98,15 +76,16 @@ void A7105Config(const uint8_t *regsTable, uint8_t size)
     }
 }
 
-bool A7105RxTxFinished(uint32_t *timeStamp) {
+bool A7105RxTxFinished(timeUs_t *timeStamp) {
     bool result = false;
 
-    if (occurEvent) {
-        if (timeStamp) {
-            *timeStamp = timeEvent;
+    if (consumeExti && rxSpiPollExti()) {
+        if (rxSpiGetLastExtiTimeUs()) {
+            *timeStamp = rxSpiGetLastExtiTimeUs();
         }
 
-        occurEvent = false;
+        rxSpiResetExti();
+
         result = true;
     }
     return result;
@@ -130,18 +109,19 @@ void A7105WriteReg(A7105Reg_t reg, uint8_t data)
 void A7105Strobe(A7105State_t state)
 {
     if (A7105_TX == state || A7105_RX == state) {
-        EXTIEnable(rxIntIO, true);
+        consumeExti = true;
+        rxSpiResetExti();
     } else {
-        EXTIEnable(rxIntIO, false);
+        consumeExti = false;
     }
 
-#ifdef RX_PA_TXEN_PIN
-    if (A7105_TX == state) {
-        IOHi(txEnIO); /* enable PA */
-    } else {
-        IOLo(txEnIO); /* disable PA */
+    if (txEnIO) {
+        if (A7105_TX == state) {
+            IOHi(txEnIO); /* enable PA */
+        } else {
+            IOLo(txEnIO); /* disable PA */
+        }
     }
-#endif
 
     rxSpiWriteByte((uint8_t)state);
 }

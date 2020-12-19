@@ -21,7 +21,15 @@
 #pragma once
 
 #define TARGET_BOARD_IDENTIFIER "SDF4"
-#define USBD_PRODUCT_STRING     "DISCF4"
+#define USBD_PRODUCT_STRING     "STM32F4DISCOVERY"
+
+// These features are in here to get coverage in CI builds
+#define USE_STACK_CHECK
+
+#if defined(STM32F4DISCOVERY_DEBUG)
+// Used to test DEBUG builds in CICD
+#define DEBUG
+#endif
 
 //LEDs
 #define LED0_PIN                PD12
@@ -44,7 +52,6 @@
 #define USE_ACC
 #define USE_FAKE_ACC
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW180_DEG_FLIP
 // ACC section -- end
 
 // GYRO section -- start

@@ -49,7 +49,6 @@
 #define GYRO_1_CS_PIN           PB2
 #define GYRO_1_SPI_INSTANCE     SPI1
 #define GYRO_1_ALIGN            CW90_DEG
-#define ACC_1_ALIGN             CW90_DEG
 
 //------ICM20689
 #define USE_GYRO_SPI_ICM20689
@@ -137,7 +136,7 @@
 
 #define CURRENT_METER_SCALE_DEFAULT     166
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define USE_ESCSERIAL
 #define ESCSERIAL_TIMER_TX_PIN PA3

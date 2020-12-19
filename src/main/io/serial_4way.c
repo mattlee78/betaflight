@@ -33,8 +33,8 @@
 #include "drivers/buf_writer.h"
 #include "drivers/io.h"
 #include "drivers/serial.h"
+#include "drivers/time.h"
 #include "drivers/timer.h"
-#include "drivers/pwm_output.h"
 #include "drivers/light_led.h"
 
 #include "flight/mixer.h"
@@ -76,9 +76,9 @@
 // *** change to adapt Revision
 #define SERIAL_4WAY_VER_MAIN 20
 #define SERIAL_4WAY_VER_SUB_1 (uint8_t) 0
-#define SERIAL_4WAY_VER_SUB_2 (uint8_t) 02
+#define SERIAL_4WAY_VER_SUB_2 (uint8_t) 05
 
-#define SERIAL_4WAY_PROTOCOL_VER 107
+#define SERIAL_4WAY_PROTOCOL_VER 108
 // *** end
 
 #if (SERIAL_4WAY_VER_MAIN > 24)
@@ -137,7 +137,8 @@ inline void setEscOutput(uint8_t selEsc)
 uint8_t esc4wayInit(void)
 {
     // StopPwmAllMotors();
-    pwmDisableMotors();
+    // XXX Review effect of motor refactor
+    //pwmDisableMotors();
     escCount = 0;
     memset(&escHardware, 0, sizeof(escHardware));
     pwmOutputPort_t *pwmMotors = pwmGetMotors();
@@ -151,6 +152,7 @@ uint8_t esc4wayInit(void)
             }
         }
     }
+    motorDisable();
     return escCount;
 }
 
@@ -161,7 +163,7 @@ void esc4wayRelease(void)
         IOConfigGPIO(escHardware[escCount].io, IOCFG_AF_PP);
         setEscLo(escCount);
     }
-    pwmEnableMotors();
+    motorEnable();
 }
 
 
@@ -330,13 +332,13 @@ uint16_t _crc_xmodem_update (uint16_t crc, uint8_t data) {
 #define ATMEL_DEVICE_MATCH ((pDeviceInfo->words[0] == 0x9307) || (pDeviceInfo->words[0] == 0x930A) || \
         (pDeviceInfo->words[0] == 0x930F) || (pDeviceInfo->words[0] == 0x940B))
 
-#define SILABS_DEVICE_MATCH ((pDeviceInfo->words[0] == 0xF310)||(pDeviceInfo->words[0] ==0xF330) || \
+#define SILABS_DEVICE_MATCH ((pDeviceInfo->words[0] == 0xF310) || (pDeviceInfo->words[0] == 0xF330) || \
         (pDeviceInfo->words[0] == 0xF410) || (pDeviceInfo->words[0] == 0xF390) || \
         (pDeviceInfo->words[0] == 0xF850) || (pDeviceInfo->words[0] == 0xE8B1) || \
         (pDeviceInfo->words[0] == 0xE8B2))
 
-#define ARM_DEVICE_MATCH ((pDeviceInfo->words[0] == 0x1F06) || \
-        (pDeviceInfo->words[0] == 0x3306) || (pDeviceInfo->words[0] == 0x3406) || (pDeviceInfo->words[0] == 0x3506))
+// BLHeli_32 MCU ID hi > 0x00 and < 0x90 / lo always = 0x06
+#define ARM_DEVICE_MATCH ((pDeviceInfo->bytes[1] > 0x00) && (pDeviceInfo->bytes[1] < 0x90) && (pDeviceInfo->bytes[0] == 0x06))
 
 static uint8_t CurrentInterfaceMode;
 
@@ -563,9 +565,13 @@ void esc4wayProcess(serialPort_t *mspPort)
 
                 case cmd_DeviceReset:
                 {
+                    bool rebootEsc = false;
                     if (ParamBuf[0] < escCount) {
                         // Channel may change here
                         selected_esc = ParamBuf[0];
+                        if (ioMem.D_FLASH_ADDR_L == 1) {
+                            rebootEsc = true;
+                        }
                     }
                     else {
                         ACK_OUT = ACK_I_INVALID_CHANNEL;
@@ -579,6 +585,14 @@ void esc4wayProcess(serialPort_t *mspPort)
                         case imARM_BLB:
                         {
                             BL_SendCMDRunRestartBootloader(&DeviceInfo);
+                            if (rebootEsc) {
+                                ESC_OUTPUT;
+                                setEscLo(selected_esc);
+                                timeMs_t m = millis();
+                                while (millis() - m < 300);
+                                setEscHi(selected_esc);
+                                ESC_INPUT;
+                            }
                             break;
                         }
                         #endif

@@ -47,7 +47,6 @@
 
 #define USE_ACC
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW270_DEG
 
 #define USE_GYRO
 #define USE_GYRO_SPI_MPU6500
@@ -90,7 +89,10 @@
 #define FLASH_SPI_INSTANCE   SPI2
 
 #define USE_FLASHFS
+#define USE_FLASH_TOOLS
 #define USE_FLASH_M25P16
+#define USE_FLASH_W25N01G
+#define USE_FLASH_W25M02G
 
 #define USE_VCP
 
@@ -148,8 +150,6 @@
 #define USE_MAX7456
 #define MAX7456_SPI_INSTANCE    SPI3
 #define MAX7456_SPI_CS_PIN      PB12
-#define MAX7456_SPI_CLK         (SPI_CLOCK_STANDARD) // 10MHz
-#define MAX7456_RESTORE_CLK     (SPI_CLOCK_FAST)
 
 #define USE_ADC
 #define ADC_INSTANCE         ADC1  // Default added

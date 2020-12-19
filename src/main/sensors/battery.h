@@ -27,8 +27,20 @@
 #include "sensors/current.h"
 #include "sensors/voltage.h"
 
+//TODO: Make the 'cell full' voltage user adjustble
+#define CELL_VOLTAGE_FULL_CV 420
+
 #define VBAT_CELL_VOTAGE_RANGE_MIN 100
 #define VBAT_CELL_VOTAGE_RANGE_MAX 500
+
+#define MAX_AUTO_DETECT_CELL_COUNT 8
+
+#define GET_BATTERY_LPF_FREQUENCY(period) (1 / (period / 10.0f))
+
+enum {
+    AUTO_PROFILE_CELL_COUNT_STAY = 0, // Stay on this profile irrespective of the detected cell count. Use this profile if no other profile matches (default, i.e. auto profile switching is off)
+    AUTO_PROFILE_CELL_COUNT_CHANGE = -1, // Always switch to a profile with matching cell count if there is one
+};
 
 typedef struct batteryConfig_s {
     // voltage
@@ -50,9 +62,13 @@ typedef struct batteryConfig_s {
     uint8_t vbathysteresis;                 // hysteresis for alarm, default 1 = 0.1V
 
     uint16_t vbatfullcellvoltage;           // Cell voltage at which the battery is deemed to be "full" 0.01V units, default is 410 (4.1V)
-    
-    uint8_t forceBatteryCellCount;            // number of cells in battery, used for overwriting auto-detected cell count if someone has issues with it.
 
+    uint8_t forceBatteryCellCount;          // Number of cells in battery, used for overwriting auto-detected cell count if someone has issues with it.
+    uint8_t vbatDisplayLpfPeriod;           // Period of the cutoff frequency for the Vbat filter for display and startup (in 0.1 s)
+    uint8_t ibatLpfPeriod;                  // Period of the cutoff frequency for the Ibat filter (in 0.1 s)
+    uint8_t vbatDurationForWarning;         // Period voltage has to sustain before the battery state is set to BATTERY_WARNING (in 0.1 s)
+    uint8_t vbatDurationForCritical;        // Period voltage has to sustain before the battery state is set to BATTERY_CRIT (in 0.1 s)
+    uint8_t vbatSagLpfPeriod;               // Period of the cutoff frequency for the Vbat sag and PID compensation filter (in 0.1 s)
 } batteryConfig_t;
 
 PG_DECLARE(batteryConfig_t, batteryConfig);
@@ -85,7 +101,6 @@ void batteryUpdateAlarms(void);
 
 struct rxConfig_s;
 
-float calculateVbatPidCompensation(void);
 uint8_t calculateBatteryPercentageRemaining(void);
 bool isBatteryVoltageConfigured(void);
 uint16_t getBatteryVoltage(void);
@@ -93,6 +108,7 @@ uint16_t getLegacyBatteryVoltage(void);
 uint16_t getBatteryVoltageLatest(void);
 uint8_t getBatteryCellCount(void);
 uint16_t getBatteryAverageCellVoltage(void);
+uint16_t getBatterySagCellVoltage(void);
 
 bool isAmperageConfigured(void);
 int32_t getAmperage(void);

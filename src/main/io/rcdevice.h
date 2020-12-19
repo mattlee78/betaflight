@@ -38,6 +38,7 @@
 #define RCDEVICE_PROTOCOL_COMMAND_5KEY_SIMULATION_PRESS             0x02
 #define RCDEVICE_PROTOCOL_COMMAND_5KEY_SIMULATION_RELEASE           0x03
 #define RCDEVICE_PROTOCOL_COMMAND_5KEY_CONNECTION                   0x04
+#define RCDEVICE_PROTOCOL_COMMAND_REQUEST_FC_ATTITUDE               0x50
 
 // Old protocol defines
 #define RCSPLIT_PACKET_HEADER           0x55
@@ -53,6 +54,7 @@ typedef enum {
     RCDEVICE_PROTOCOL_FEATURE_START_RECORDING          = (1 << 6),
     RCDEVICE_PROTOCOL_FEATURE_STOP_RECORDING           = (1 << 7),
     RCDEVICE_PROTOCOL_FEATURE_CMS_MENU                 = (1 << 8),
+    RCDEVICE_PROTOCOL_FEATURE_FC_ATTITUDE              = (1 << 9)
 } rcdevice_features_e;
 
 // Operation of Camera Button Simulation
@@ -104,7 +106,7 @@ typedef enum {
 // end of Runcam Device definition
 
 typedef struct runcamDeviceInfo_s {
-    rcdevice_protocol_version_e protocolVer;
+    rcdevice_protocol_version_e protocolVersion;
     uint16_t features;
 } runcamDeviceInfo_t;
 
@@ -115,7 +117,7 @@ typedef struct runcamDevice_s {
     bool isReady;
 } runcamDevice_t;
 
-#define MAX_WAITING_RESPONSES 20
+#define MAX_WAITING_RESPONSES 1
 
 typedef enum {
     RCDEVICE_RESP_SUCCESS = 0,
@@ -136,7 +138,7 @@ struct rcdeviceResponseParseContext_s {
     runcamDevice_t *device;
     uint8_t paramData[RCDEVICE_PROTOCOL_MAX_DATA_SIZE];
     uint8_t paramDataLen;
-    uint8_t protocolVer;
+    uint8_t protocolVersion;
     int maxRetryTimes;
     void *userInfo;
     rcdeviceResponseStatus_e result;
@@ -150,6 +152,12 @@ typedef struct {
     rcdeviceRespParseFunc parseFunc;
 } rcdeviceWaitingResponseQueue;
 
+typedef struct {
+    uint8_t command;
+    uint8_t data[RCDEVICE_PROTOCOL_MAX_DATA_SIZE - 1];
+    uint8_t dataLength;
+} runcamDeviceRequest_t;
+
 void runcamDeviceInit(runcamDevice_t *device);
 void rcdeviceReceive(timeUs_t currentTimeUs);
 
@@ -161,3 +169,7 @@ void runcamDeviceOpen5KeyOSDCableConnection(runcamDevice_t *device, rcdeviceResp
 void runcamDeviceClose5KeyOSDCableConnection(runcamDevice_t *device, rcdeviceRespParseFunc parseFunc);
 void runcamDeviceSimulate5KeyOSDCableButtonPress(runcamDevice_t *device, uint8_t operation, rcdeviceRespParseFunc parseFunc);
 void runcamDeviceSimulate5KeyOSDCableButtonRelease(runcamDevice_t *device, rcdeviceRespParseFunc parseFunc);
+
+void runcamDeviceSendAttitude(runcamDevice_t *device);
+
+runcamDeviceRequest_t* rcdeviceGetRequest();

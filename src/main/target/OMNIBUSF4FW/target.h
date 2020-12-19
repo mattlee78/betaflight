@@ -61,8 +61,6 @@
 #define USE_GYRO_SPI_MPU6000
 #define USE_GYRO_SPI_MPU6500
 
-#define USE_DUAL_GYRO
-
 #if defined(OMNIBUSF4V6)
 #define GYRO_1_CS_PIN           PA4   // Onboard IMU  
 #define GYRO_1_SPI_INSTANCE     SPI1
@@ -76,14 +74,11 @@
 #endif
 
 #define GYRO_1_ALIGN            CW180_DEG
-#define ACC_1_ALIGN             CW180_DEG
 
 #if defined(OMNIBUSF4V6)
 #define GYRO_2_ALIGN            CW0_DEG
-#define ACC_2_ALIGN             CW0_DEG
 #else
 #define GYRO_2_ALIGN            CW0_DEG_FLIP
-#define ACC_2_ALIGN             CW0_DEG_FLIP
 #endif
 
 #define GYRO_CONFIG_USE_GYRO_DEFAULT GYRO_CONFIG_USE_GYRO_1
@@ -111,8 +106,6 @@
 #define USE_MAX7456
 #define MAX7456_SPI_INSTANCE    SPI3
 #define MAX7456_SPI_CS_PIN      PA15
-#define MAX7456_SPI_CLK         (SPI_CLOCK_STANDARD) // 10MHz
-#define MAX7456_RESTORE_CLK     (SPI_CLOCK_FAST)
 
 #define USE_FLASHFS
 #define USE_FLASH_M25P16
@@ -171,14 +164,13 @@
 #define SPI3_MISO_PIN           PC11
 #define SPI3_MOSI_PIN           PC12
 
-#if defined(OMNIBUSF4V6)
 #define USE_I2C
+#if defined(OMNIBUSF4V6)
 #define USE_I2C_DEVICE_1
 #define I2C1_SCL                PB8 // SCL PIN,alt MST8
 #define I2C1_SDA                PB9 // SDA PIN,alt MST7
 #define I2C_DEVICE              (I2CDEV_1)
 #else
-#define USE_I2C
 #define USE_I2C_DEVICE_2
 #define I2C2_SCL                NONE // PB10, shared with UART3TX
 #define I2C2_SDA                NONE // PB11, shared with UART3RX
@@ -193,8 +185,10 @@
 #define RSSI_ADC_PIN            PA0  // Direct from RSSI pad
 
 // Allegro Systems ACS781KLRTR-150U-T
+#if !defined(OMNIBUSF4V6)
 #define CURRENT_METER_SCALE_DEFAULT  176
 #define CURRENT_METER_OFFSET_DEFAULT -18500
+#endif
 
 #define DEFAULT_VOLTAGE_METER_SOURCE VOLTAGE_METER_ADC
 #define DEFAULT_CURRENT_METER_SOURCE CURRENT_METER_ADC
@@ -209,7 +203,7 @@
 
 #define TARGET_IO_PORTA (0xffff & ~(BIT(14)|BIT(13)))
 #define TARGET_IO_PORTB (0xffff & ~(BIT(2)))
-#define TARGET_IO_PORTC (0xffff & ~(BIT(15)))
+#define TARGET_IO_PORTC  0xffff
 #define TARGET_IO_PORTD BIT(2)
 
 #define USABLE_TIMER_CHANNEL_COUNT 15

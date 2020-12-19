@@ -55,9 +55,10 @@ extern char _Min_Stack_Size; // declared in .LD file
  * RAM is origin 0x20000000 length 128K that is:
  * 0x20000000 to 0x20020000
  *
+ * See the linker scripts for actual stack configuration.
  */
 
-#ifdef STACK_CHECK
+#ifdef USE_STACK_CHECK
 
 static uint32_t usedStackSize;
 

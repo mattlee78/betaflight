@@ -24,7 +24,7 @@
 
 #define USBD_PRODUCT_STRING  "MatekF7"
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define LED0_PIN                PB9
 #define LED1_PIN                PA14
@@ -58,8 +58,6 @@
 #define USE_ACC
 #define USE_ACC_SPI_MPU6500
 #define USE_ACC_SPI_ICM20689
-#define ACC_1_ALIGN             CW180_DEG
-//#define ACC_1_ALIGN             CW90_DEG // XXX has to be post-flash configured
 
 // *************** Baro **************************
 #define USE_I2C

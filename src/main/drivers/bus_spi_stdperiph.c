@@ -44,7 +44,7 @@ static SPI_InitTypeDef defaultInit = {
     .SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8,
 };
 
-void spiInitDevice(SPIDevice device)
+void spiInitDevice(SPIDevice device, bool leadingEdge)
 {
     spiDevice_t *spi = &(spiDevice[device]);
 
@@ -53,16 +53,9 @@ void spiInitDevice(SPIDevice device)
     }
 
 #ifndef USE_SPI_TRANSACTION
-#ifdef SDCARD_SPI_INSTANCE
-    if (spi->dev == SDCARD_SPI_INSTANCE) {
-        spi->leadingEdge = true;
-    }
-#endif
-#ifdef RX_SPI_INSTANCE
-    if (spi->dev == RX_SPI_INSTANCE) {
-        spi->leadingEdge = true;
-    }
-#endif
+    spi->leadingEdge = leadingEdge;
+#else
+    UNUSED(leadingEdge);
 #endif
 
     // Enable SPI clock
@@ -113,6 +106,8 @@ uint8_t spiTransferByte(SPI_TypeDef *instance, uint8_t txByte)
 {
     uint16_t spiTimeout = 1000;
 
+    DISCARD(instance->DR);
+
     while (SPI_I2S_GetFlagStatus(instance, SPI_I2S_FLAG_TXE) == RESET)
         if ((spiTimeout--) == 0)
             return spiTimeoutUserCallback(instance);
@@ -152,7 +147,7 @@ bool spiTransfer(SPI_TypeDef *instance, const uint8_t *txData, uint8_t *rxData, 
     uint16_t spiTimeout = 1000;
 
     uint8_t b;
-    instance->DR;
+    DISCARD(instance->DR);
     while (len--) {
         b = txData ? *(txData++) : 0xFF;
         while (SPI_I2S_GetFlagStatus(instance, SPI_I2S_FLAG_TXE) == RESET) {
@@ -217,7 +212,7 @@ void spiSetDivisor(SPI_TypeDef *instance, uint16_t divisor)
 
 #ifdef USE_SPI_TRANSACTION
 
-void spiBusTransactionInit(busDevice_t *bus, SPIMode_e mode, SPIClockDivider_e divider)
+void spiBusTransactionInit(busDevice_t *bus, SPIMode_e mode, uint16_t divider)
 {
     switch (mode) {
     case SPI_MODE0_POL_LOW_EDGE_1ST:

@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "drivers/dma.h" // For dmaResource_t
+
 // Since serial ports can be used for any function these buffer sizes should be equal
 // The two largest things that need to be sent are: 1, MSP responses, 2, UBLOX SVINFO packet.
 
@@ -35,25 +37,24 @@ typedef enum {
     UARTDEV_5 = 4,
     UARTDEV_6 = 5,
     UARTDEV_7 = 6,
-    UARTDEV_8 = 7
+    UARTDEV_8 = 7,
+    UARTDEV_9 = 8,
 } UARTDevice_e;
 
 typedef struct uartPort_s {
     serialPort_t port;
 
-#if defined(STM32F7)
+#ifdef USE_DMA
+#ifdef USE_HAL_DRIVER
     DMA_HandleTypeDef rxDMAHandle;
     DMA_HandleTypeDef txDMAHandle;
 #endif
-#if defined(STM32F4) || defined(STM32F7)
-    DMA_Stream_TypeDef *rxDMAStream;
-    DMA_Stream_TypeDef *txDMAStream;
+
+    dmaResource_t *rxDMAResource;
+    dmaResource_t *txDMAResource;
     uint32_t rxDMAChannel;
     uint32_t txDMAChannel;
-#else
-    DMA_Channel_TypeDef *rxDMAChannel;
-    DMA_Channel_TypeDef *txDMAChannel;
-#endif
+
     uint32_t rxDMAIrq;
     uint32_t txDMAIrq;
 
@@ -61,6 +62,7 @@ typedef struct uartPort_s {
 
     uint32_t txDMAPeripheralBaseAddr;
     uint32_t rxDMAPeripheralBaseAddr;
+#endif // USE_DMA
 
 #ifdef USE_HAL_DRIVER
     // All USARTs can also be used as UART, and we use them only as UART.

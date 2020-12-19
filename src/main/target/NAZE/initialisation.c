@@ -22,21 +22,28 @@
 #include <stdint.h>
 
 #include "platform.h"
+
 #include "drivers/bus.h"
 #include "drivers/bus_i2c.h"
 #include "drivers/bus_spi.h"
-#include "io/serial.h"
+
 #include "hardware_revision.h"
+
+#include "io/serial.h"
+
 #include "pg/bus_i2c.h"
 #include "pg/bus_spi.h"
+
+#include "sensors/initialisation.h"
 
 void targetBusInit(void)
 {
 #ifdef USE_SPI
     spiPinConfigure(spiPinConfig(0));
+    sensorsPreInit();
     spiPreinit();
 #ifdef USE_SPI_DEVICE_2
-    spiInit(SPIDEV_2);
+    spiInit(SPIDEV_2, false); // Leading edge not required for legacy sensors
 #endif
 #endif
 

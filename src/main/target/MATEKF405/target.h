@@ -30,7 +30,7 @@
 #define BEEPER_PIN              PC13
 #define BEEPER_INVERTED
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 // *************** Gyro & ACC **********************
 #define USE_SPI
@@ -60,8 +60,6 @@
 #define USE_ACC
 #define USE_ACC_SPI_MPU6000
 #define USE_ACC_SPI_MPU6500
-#define ACC_1_ALIGN             CW270_DEG
-//#define ACC_1_ALIGN             CW180_DEG // XXX MPU6500 align, must be configured after flashing
 
 #define USE_MAG
 #define USE_MAG_HMC5883
@@ -76,8 +74,8 @@
 #define USE_I2C_DEVICE_3
 
 #define I2C_DEVICE              (I2CDEV_3)
-#define I2C3_SCL                PC9        // S4 pad
-#define I2C3_SDA                PA8        // S6 pad
+#define I2C3_SCL                PA8        // S4 pad
+#define I2C3_SDA                PC9        // S6 pad
 #define BARO_I2C_INSTANCE       (I2CDEV_3)
 #else
 #define USE_I2C_DEVICE_1

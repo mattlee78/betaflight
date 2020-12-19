@@ -14,7 +14,9 @@
  * You should have received a copy of the GNU General Public License
  * along with Betaflight. If not, see <http://www.gnu.org/licenses/>.
  */
- 
+
+#pragma once
+
 #include "common/axis.h"
 
 #include "pg/pg.h"
@@ -23,7 +25,7 @@ typedef struct gpsRescue_s {
     uint16_t angle; //degrees
     uint16_t initialAltitudeM; //meters
     uint16_t descentDistanceM; //meters
-    uint16_t rescueGroundspeed; // centimeters per second
+    uint16_t rescueGroundspeed; //centimeters per second
     uint16_t throttleP, throttleI, throttleD;
     uint16_t yawP;
     uint16_t throttleMin;
@@ -35,6 +37,12 @@ typedef struct gpsRescue_s {
     uint8_t sanityChecks;
     uint8_t allowArmingWithoutFix;
     uint8_t useMag;
+    uint16_t targetLandingAltitudeM; //meters
+    uint16_t targetLandingDistanceM; //meters
+    uint8_t altitudeMode;
+    uint16_t ascendRate;
+    uint16_t descendRate;
+    uint16_t rescueAltitudeBufferM; //meters
 } gpsRescueConfig_t;
 
 PG_DECLARE(gpsRescueConfig_t, gpsRescueConfig);

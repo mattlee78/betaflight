@@ -41,39 +41,35 @@
 #include "build/version.h"
 
 #include "cms/cms.h"
-#include "cms/cms_menu_builtin.h"
+#include "cms/cms_menu_main.h"
 #include "cms/cms_menu_saveexit.h"
 #include "cms/cms_types.h"
 
 #include "common/maths.h"
 #include "common/typeconversion.h"
 
+#include "config/config.h"
+#include "config/feature.h"
+
 #include "drivers/system.h"
 #include "drivers/time.h"
+#include "drivers/motor.h"
 
-// For rcData, stopAllMotors, stopPwmAllMotors
-#include "config/feature.h"
-#include "pg/pg.h"
-#include "pg/pg_ids.h"
-#include "pg/rx.h"
-
-// For 'ARM' related
-#include "fc/config.h"
 #include "fc/rc_controls.h"
 #include "fc/runtime_config.h"
 
 #include "flight/mixer.h"
 
-// For VISIBLE*
-#include "io/osd.h"
 #include "io/rcdevice_cam.h"
+#include "io/usb_cdc_hid.h"
+
+#include "pg/pg.h"
+#include "pg/pg_ids.h"
+#include "pg/rx.h"
+
+#include "osd/osd.h"
 
 #include "rx/rx.h"
-
-#ifdef USE_USB_CDC_HID
-#include "sensors/battery.h"
-#include "pg/usb.h"
-#endif
 
 // DisplayPort management
 
@@ -81,19 +77,24 @@
 #define CMS_MAX_DEVICE 4
 #endif
 
+#define CMS_MENU_STACK_LIMIT 10
+
 displayPort_t *pCurrentDisplay;
 
 static displayPort_t *cmsDisplayPorts[CMS_MAX_DEVICE];
-static int cmsDeviceCount;
+static unsigned cmsDeviceCount;
 static int cmsCurrentDevice = -1;
 #ifdef USE_OSD
 static unsigned int osdProfileCursor = 1;
 #endif
 
+int menuChainBack;
+
 bool cmsDisplayPortRegister(displayPort_t *pDisplay)
 {
-    if (cmsDeviceCount == CMS_MAX_DEVICE)
+    if (cmsDeviceCount >= CMS_MAX_DEVICE) {
         return false;
+    }
 
     cmsDisplayPorts[cmsDeviceCount++] = pDisplay;
 
@@ -102,19 +103,22 @@ bool cmsDisplayPortRegister(displayPort_t *pDisplay)
 
 static displayPort_t *cmsDisplayPortSelectCurrent(void)
 {
-    if (cmsDeviceCount == 0)
+    if (cmsDeviceCount == 0) {
         return NULL;
+    }
 
-    if (cmsCurrentDevice < 0)
+    if (cmsCurrentDevice < 0) {
         cmsCurrentDevice = 0;
+    }
 
     return cmsDisplayPorts[cmsCurrentDevice];
 }
 
 static displayPort_t *cmsDisplayPortSelectNext(void)
 {
-    if (cmsDeviceCount == 0)
+    if (cmsDeviceCount == 0) {
         return NULL;
+    }
 
     cmsCurrentDevice = (cmsCurrentDevice + 1) % cmsDeviceCount; // -1 Okay
 
@@ -123,10 +127,7 @@ static displayPort_t *cmsDisplayPortSelectNext(void)
 
 bool cmsDisplayPortSelect(displayPort_t *instance)
 {
-    if (cmsDeviceCount == 0) {
-        return false;
-    }
-    for (int i = 0; i < cmsDeviceCount; i++) {
+    for (unsigned i = 0; i < cmsDeviceCount; i++) {
         if (cmsDisplayPortSelectNext() == instance) {
             return true;
         }
@@ -134,7 +135,6 @@ bool cmsDisplayPortSelect(displayPort_t *instance)
     return false;
 }
 
-#define CMS_UPDATE_INTERVAL_US  50000   // Interval of key scans (microsec)
 #define CMS_POLL_INTERVAL_US   100000   // Interval of polling dynamic values (microsec)
 
 // XXX LEFT_MENU_COLUMN and RIGHT_MENU_COLUMN must be adjusted
@@ -156,7 +156,7 @@ bool cmsDisplayPortSelect(displayPort_t *instance)
 //   13 cols x 9 rows, top row printed as a Bold Heading
 //   Needs the "smallScreen" adaptions
 
-
+#define CMS_MAX_ROWS 16
 
 #define NORMAL_SCREEN_MIN_COLS 18      // Less is a small screen
 static bool    smallScreen;
@@ -175,14 +175,16 @@ typedef struct cmsCtx_s {
     int8_t cursorRow;             // cursorRow in the page
 } cmsCtx_t;
 
-static cmsCtx_t menuStack[10];
+static cmsCtx_t menuStack[CMS_MENU_STACK_LIMIT];
 static uint8_t menuStackIdx = 0;
 
 static int8_t pageCount;         // Number of pages in the current menu
-static OSD_Entry *pageTop;       // First entry for the current page
+static const OSD_Entry *pageTop;       // First entry for the current page
 static uint8_t pageMaxRow;       // Max row in the current page
 
 static cmsCtx_t currentCtx;
+
+static bool saveMenuInhibited = false;
 
 #ifdef CMS_MENU_DEBUG // For external menu content creators
 
@@ -211,8 +213,6 @@ static CMS_Menu menuErr = {
     debug[1] = currentCtx.page; \
     debug[2] = pageMaxRow; \
     debug[3] = currentCtx.cursorRow; } struct _dummy
-#else
-#define cmsPageDebug()
 #endif
 
 static void cmsUpdateMaxRow(displayPort_t *instance)
@@ -228,6 +228,10 @@ static void cmsUpdateMaxRow(displayPort_t *instance)
         pageMaxRow = maxMenuItems;
     }
 
+    if (pageMaxRow > CMS_MAX_ROWS) {
+        pageMaxRow = CMS_MAX_ROWS;
+    }
+
     pageMaxRow--;
 }
 
@@ -237,11 +241,29 @@ static uint8_t cmsCursorAbsolute(displayPort_t *instance)
     return currentCtx.cursorRow + currentCtx.page * maxMenuItems;
 }
 
+uint8_t runtimeEntryFlags[CMS_MAX_ROWS] = { 0 };
+
+#define LOOKUP_TABLE_TICKER_START_CYCLES 20   // Task loops for start/end of ticker (1 second delay)
+#define LOOKUP_TABLE_TICKER_SCROLL_CYCLES 3   // Task loops for each scrolling step of the ticker (150ms delay)
+
+typedef struct cmsTableTicker_s {
+    uint8_t loopCounter;
+    uint8_t state;
+} cmsTableTicker_t;
+
+cmsTableTicker_t runtimeTableTicker[CMS_MAX_ROWS];
+
 static void cmsPageSelect(displayPort_t *instance, int8_t newpage)
 {
     currentCtx.page = (newpage + pageCount) % pageCount;
     pageTop = &currentCtx.menu->entries[currentCtx.page * maxMenuItems];
     cmsUpdateMaxRow(instance);
+
+    const OSD_Entry *p;
+    int i;
+    for (p = pageTop, i = 0; (p <= pageTop + pageMaxRow); p++, i++) {
+        runtimeEntryFlags[i] = p->flags;
+    }
     displayClearScreen(instance);
 }
 
@@ -271,15 +293,18 @@ static void cmsFormatFloat(int32_t value, char *floatString)
     // 03.450
     // usuwam koncowe zera i kropke
     // Keep the first decimal place
-    for (k = 5; k > 3; k--)
-        if (floatString[k] == '0' || floatString[k] == '.')
+    for (k = 5; k > 3; k--) {
+        if (floatString[k] == '0' || floatString[k] == '.') {
             floatString[k] = 0;
-        else
+        } else {
             break;
+        }
+    }
 
     // oraz zero wiodonce
-    if (floatString[0] == '0')
+    if (floatString[0] == '0') {
         floatString[0] = ' ';
+    }
 }
 
 // CMS on OSD legacy was to use LEFT aligned values, not the RIGHT way ;-)
@@ -293,8 +318,9 @@ static void cmsPadRightToSize(char *buf, int size)
     int i;
 
     for (i = 0 ; i < size ; i++) {
-        if (buf[i] == 0)
+        if (buf[i] == 0) {
             break;
+        }
     }
 
     for ( ; i < size ; i++) {
@@ -334,6 +360,19 @@ static void cmsPadToSize(char *buf, int size)
 #endif
 }
 
+static int cmsDisplayWrite(displayPort_t *instance, uint8_t x, uint8_t y, uint8_t attr, const char *s)
+{
+    char buffer[strlen(s) + 1];
+    char* b = buffer;
+    while (*s) {
+        char c = toupper(*s++);
+        *b++ = (c < 0x20 || c > 0x5F) ? ' ' : c; // limit to alphanumeric and punctuation
+    }
+    *b++ = '\0';
+
+    return displayWrite(instance, x, y, attr, buffer);
+}
+
 static int cmsDrawMenuItemValue(displayPort_t *pDisplay, char *buff, uint8_t row, uint8_t maxSize)
 {
     int colpos;
@@ -345,17 +384,19 @@ static int cmsDrawMenuItemValue(displayPort_t *pDisplay, char *buff, uint8_t row
 #else
     colpos = smallScreen ? rightMenuColumn - maxSize : rightMenuColumn;
 #endif
-    cnt = displayWrite(pDisplay, colpos, row, buff);
+    cnt = cmsDisplayWrite(pDisplay, colpos, row, DISPLAYPORT_ATTR_NONE, buff);
     return cnt;
 }
 
-static int cmsDrawMenuEntry(displayPort_t *pDisplay, OSD_Entry *p, uint8_t row, bool selectedRow)
+static int cmsDrawMenuEntry(displayPort_t *pDisplay, const OSD_Entry *p, uint8_t row, bool selectedRow, uint8_t *flags, cmsTableTicker_t *ticker)
 {
     #define CMS_DRAW_BUFFER_LEN 12
+    #define CMS_TABLE_VALUE_MAX_LEN 30
     #define CMS_NUM_FIELD_LEN 5
     #define CMS_CURSOR_BLINK_DELAY_MS 500
 
     char buff[CMS_DRAW_BUFFER_LEN +1]; // Make room for null terminator.
+    char tableBuff[CMS_TABLE_VALUE_MAX_LEN +1];
     int cnt = 0;
 
 #ifndef USE_OSD
@@ -368,36 +409,37 @@ static int cmsDrawMenuEntry(displayPort_t *pDisplay, OSD_Entry *p, uint8_t row, 
 
     switch (p->type) {
     case OME_String:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             strncpy(buff, p->data, CMS_DRAW_BUFFER_LEN);
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_DRAW_BUFFER_LEN);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_Submenu:
     case OME_Funcall:
-        if (IS_PRINTVALUE(p))  {
-
+        if (IS_PRINTVALUE(*flags)) {
             buff[0]= 0x0;
 
-            if ((p->type == OME_Submenu) && p->func && (p->flags & OPTSTRING)) {
+            if (p->type == OME_Submenu && p->func && *flags & OPTSTRING) {
 
                 // Special case of sub menu entry with optional value display.
 
-                char *str = ((CMSMenuOptFuncPtr)p->func)();
-                strncpy( buff, str, CMS_DRAW_BUFFER_LEN);
+                const char *str = p->func(pDisplay, p->data);
+                strncpy(buff, str, CMS_DRAW_BUFFER_LEN);
+            } else if (p->type == OME_Funcall && p->data) {
+                strncpy(buff, p->data, CMS_DRAW_BUFFER_LEN);
             }
             strncat(buff, ">", CMS_DRAW_BUFFER_LEN);
 
-            row = smallScreen  ? row - 1  : row;
+            row = smallScreen ? row - 1 : row;
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, strlen(buff));
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_Bool:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             if (*((uint8_t *)(p->data))) {
               strcpy(buff, "YES");
             } else {
@@ -405,23 +447,55 @@ static int cmsDrawMenuEntry(displayPort_t *pDisplay, OSD_Entry *p, uint8_t row, 
             }
 
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, 3);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_TAB:
-        if (IS_PRINTVALUE(p)) {
+        if (IS_PRINTVALUE(*flags) || IS_SCROLLINGTICKER(*flags)) {
+            bool drawText = false;
             OSD_TAB_t *ptr = p->data;
-            char * str = (char *)ptr->names[*ptr->val];
-            strncpy(buff, str, CMS_DRAW_BUFFER_LEN);
-            cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_DRAW_BUFFER_LEN);
-            CLR_PRINTVALUE(p);
+            const int labelLength = strlen(p->text) + 1; // account for the space between label and display data
+            char *str = (char *)ptr->names[*ptr->val];   // lookup table display text
+            const int displayLength = strlen(str);
+
+            // Calculate the available space to display the lookup table entry based on the
+            // screen size and the length of the label. Always display at least CMS_DRAW_BUFFER_LEN
+            // characters to prevent really long labels from overriding the data display.
+            const int availableSpace = MAX(CMS_DRAW_BUFFER_LEN, rightMenuColumn - labelLength - leftMenuColumn - 1);
+
+            if (IS_PRINTVALUE(*flags)) {
+                drawText = true;
+                ticker->state = 0;
+                ticker->loopCounter = 0;
+                if (displayLength > availableSpace) {  // table entry text is longer than the available space so start the ticker
+                    SET_SCROLLINGTICKER(*flags);
+                } else {
+                    CLR_SCROLLINGTICKER(*flags);
+                }
+            } else if (IS_SCROLLINGTICKER(*flags)) {
+                ticker->loopCounter++;
+                const uint8_t loopLimit = (ticker->state == 0 || ticker->state == (displayLength - availableSpace)) ? LOOKUP_TABLE_TICKER_START_CYCLES : LOOKUP_TABLE_TICKER_SCROLL_CYCLES;
+                if (ticker->loopCounter >= loopLimit) {
+                    ticker->loopCounter = 0;
+                    drawText = true;
+                    ticker->state++;
+                    if (ticker->state > (displayLength - availableSpace)) {
+                        ticker->state = 0;
+                    }
+                }
+            }
+            if (drawText) {
+                strncpy(tableBuff, (char *)(str + ticker->state), CMS_TABLE_VALUE_MAX_LEN);
+                cnt = cmsDrawMenuItemValue(pDisplay, tableBuff, row, availableSpace);
+            }
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
 #ifdef USE_OSD
     case OME_VISIBLE:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             uint16_t *val = (uint16_t *)p->data;
             bool cursorBlink = millis() % (2 * CMS_CURSOR_BLINK_DELAY_MS) < CMS_CURSOR_BLINK_DELAY_MS;
             for (unsigned x = 1; x < OSD_PROFILE_COUNT + 1; x++) {
@@ -440,61 +514,79 @@ static int cmsDrawMenuEntry(displayPort_t *pDisplay, OSD_Entry *p, uint8_t row, 
                 }
             }
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, 3);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 #endif
 
     case OME_UINT8:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             OSD_UINT8_t *ptr = p->data;
             itoa(*ptr->val, buff, 10);
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_INT8:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             OSD_INT8_t *ptr = p->data;
             itoa(*ptr->val, buff, 10);
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_UINT16:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             OSD_UINT16_t *ptr = p->data;
             itoa(*ptr->val, buff, 10);
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_INT16:
-        if (IS_PRINTVALUE(p) && p->data) {
-            OSD_UINT16_t *ptr = p->data;
+        if (IS_PRINTVALUE(*flags) && p->data) {
+            OSD_INT16_t *ptr = p->data;
             itoa(*ptr->val, buff, 10);
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
+        }
+        break;
+
+    case OME_UINT32:
+        if (IS_PRINTVALUE(*flags) && p->data) {
+            OSD_UINT32_t *ptr = p->data;
+            itoa(*ptr->val, buff, 10);
+            cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
+            CLR_PRINTVALUE(*flags);
+        }
+        break;
+
+    case OME_INT32:
+        if (IS_PRINTVALUE(*flags) && p->data) {
+            OSD_INT32_t *ptr = p->data;
+            itoa(*ptr->val, buff, 10);
+            cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_FLOAT:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             OSD_FLOAT_t *ptr = p->data;
             cmsFormatFloat(*ptr->val * ptr->multipler, buff);
             cnt = cmsDrawMenuItemValue(pDisplay, buff, row, CMS_NUM_FIELD_LEN);
-            CLR_PRINTVALUE(p);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
     case OME_Label:
-        if (IS_PRINTVALUE(p) && p->data) {
+        if (IS_PRINTVALUE(*flags) && p->data) {
             // A label with optional string, immediately following text
-            cnt = displayWrite(pDisplay, leftMenuColumn + 1 + (uint8_t)strlen(p->text), row, p->data);
-            CLR_PRINTVALUE(p);
+            cnt = cmsDisplayWrite(pDisplay, leftMenuColumn + 1 + (uint8_t)strlen(p->text), row, DISPLAYPORT_ATTR_NONE, p->data);
+            CLR_PRINTVALUE(*flags);
         }
         break;
 
@@ -509,9 +601,9 @@ static int cmsDrawMenuEntry(displayPort_t *pDisplay, OSD_Entry *p, uint8_t row, 
 #ifdef CMS_MENU_DEBUG
         // Shouldn't happen. Notify creator of this menu content
 #ifdef CMS_OSD_RIGHT_ALIGNED_VALUES
-        cnt = displayWrite(pDisplay, rightMenuColumn - 6, row, "BADENT");
-#else.
-        cnt = displayWrite(pDisplay, rightMenuColumn, row, "BADENT");
+        cnt = cmsDisplayWrite(pDisplay, rightMenuColumn - 6, row, DISPLAYPORT_ATTR_NONE, "BADENT");
+#else
+        cnt = cmsDisplayWrite(pDisplay, rightMenuColumn, row, DISPLAYPORT_ATTR_NONE, "BADENT");
 #endif
 #endif
         break;
@@ -520,13 +612,67 @@ static int cmsDrawMenuEntry(displayPort_t *pDisplay, OSD_Entry *p, uint8_t row, 
     return cnt;
 }
 
+static void cmsMenuCountPage(displayPort_t *pDisplay)
+{
+    UNUSED(pDisplay);
+    const OSD_Entry *p;
+    for (p = currentCtx.menu->entries; p->type != OME_END; p++);
+    pageCount = (p - currentCtx.menu->entries - 1) / maxMenuItems + 1;
+}
+
+STATIC_UNIT_TESTED const void *cmsMenuBack(displayPort_t *pDisplay)
+{
+    // Let onExit function decide whether to allow exit or not.
+    if (currentCtx.menu->onExit) {
+        const void *result = currentCtx.menu->onExit(pDisplay, pageTop + currentCtx.cursorRow);
+        if (result == MENU_CHAIN_BACK) {
+            return result;
+        }
+    }
+
+    saveMenuInhibited = false;
+
+    if (!menuStackIdx) {
+        return NULL;
+    }
+
+    currentCtx = menuStack[--menuStackIdx];
+
+    cmsMenuCountPage(pDisplay);
+    cmsPageSelect(pDisplay, currentCtx.page);
+
+#if defined(CMS_PAGE_DEBUG)
+    cmsPageDebug();
+#endif
+
+    return NULL;
+}
+
+// Skip read-only entries
+static bool rowIsSkippable(const OSD_Entry *row)
+{
+    if (row->type == OME_Label) {
+        return true;
+    }
+
+    if (row->type == OME_String) {
+        return true;
+    }
+	
+    if ((row->type == OME_UINT16 || row->type == OME_INT16) && row->flags == DYNAMIC) {
+        return true;
+    }
+    return false;
+}
+
 static void cmsDrawMenu(displayPort_t *pDisplay, uint32_t currentTimeUs)
 {
-    if (!pageTop)
+    if (!pageTop || !cmsInMenu) {
         return;
+    }
 
     uint8_t i;
-    OSD_Entry *p;
+    const OSD_Entry *p;
     uint8_t top = smallScreen ? 1 : (pDisplay->rows - pageMaxRow)/2;
 
     // Polled (dynamic) value display denominator.
@@ -542,49 +688,64 @@ static void cmsDrawMenu(displayPort_t *pDisplay, uint32_t currentTimeUs)
     uint32_t room = displayTxBytesFree(pDisplay);
 
     if (pDisplay->cleared) {
-        for (p = pageTop, i= 0; p->type != OME_END; p++, i++) {
-            SET_PRINTLABEL(p);
-            SET_PRINTVALUE(p);
+        for (p = pageTop, i= 0; (p <= pageTop + pageMaxRow); p++, i++) {
+            SET_PRINTLABEL(runtimeEntryFlags[i]);
+            SET_PRINTVALUE(runtimeEntryFlags[i]);
         }
         pDisplay->cleared = false;
     } else if (drawPolled) {
-        for (p = pageTop ; p <= pageTop + pageMaxRow ; p++) {
+        for (p = pageTop, i = 0; (p <= pageTop + pageMaxRow); p++, i++) {
             if (IS_DYNAMIC(p))
-                SET_PRINTVALUE(p);
+                SET_PRINTVALUE(runtimeEntryFlags[i]);
         }
     }
 
     // Cursor manipulation
 
-    while ((pageTop + currentCtx.cursorRow)->type == OME_Label) // skip label
+    while (rowIsSkippable(pageTop + currentCtx.cursorRow)) { // skip labels, strings and dynamic read-only entries
         currentCtx.cursorRow++;
-
-    cmsPageDebug();
-
-    if (pDisplay->cursorRow >= 0 && currentCtx.cursorRow != pDisplay->cursorRow) {
-        room -= displayWrite(pDisplay, leftMenuColumn, top + pDisplay->cursorRow * linesPerMenuItem, " ");
     }
 
-    if (room < 30)
+#if defined(CMS_PAGE_DEBUG)
+    cmsPageDebug();
+#endif
+
+    if (pDisplay->cursorRow >= 0 && currentCtx.cursorRow != pDisplay->cursorRow) {
+        room -= cmsDisplayWrite(pDisplay, leftMenuColumn, top + pDisplay->cursorRow * linesPerMenuItem, DISPLAYPORT_ATTR_NONE, " ");
+    }
+
+    if (room < 30) {
         return;
+    }
 
     if (pDisplay->cursorRow != currentCtx.cursorRow) {
-        room -= displayWrite(pDisplay, leftMenuColumn, top + currentCtx.cursorRow * linesPerMenuItem, ">");
+        room -= cmsDisplayWrite(pDisplay, leftMenuColumn, top + currentCtx.cursorRow * linesPerMenuItem, DISPLAYPORT_ATTR_NONE, ">");
         pDisplay->cursorRow = currentCtx.cursorRow;
     }
 
-    if (room < 30)
+    if (room < 30) {
         return;
+    }
+
+    if (currentCtx.menu->onDisplayUpdate) {
+        const void *result = currentCtx.menu->onDisplayUpdate(pDisplay, pageTop + currentCtx.cursorRow);
+        if (result == MENU_CHAIN_BACK) {
+            cmsMenuBack(pDisplay);
+
+            return;
+        }
+    }
 
     // Print text labels
-    for (i = 0, p = pageTop; i < maxMenuItems && p->type != OME_END; i++, p++) {
-        if (IS_PRINTLABEL(p)) {
+    for (i = 0, p = pageTop; (p <= pageTop + pageMaxRow); i++, p++) {
+        if (IS_PRINTLABEL(runtimeEntryFlags[i])) {
             uint8_t coloff = leftMenuColumn;
             coloff += (p->type == OME_Label) ? 0 : 1;
-            room -= displayWrite(pDisplay, coloff, top + i * linesPerMenuItem, p->text);
-            CLR_PRINTLABEL(p);
-            if (room < 30)
+            room -= cmsDisplayWrite(pDisplay, coloff, top + i * linesPerMenuItem, DISPLAYPORT_ATTR_NONE, p->text);
+            CLR_PRINTLABEL(runtimeEntryFlags[i]);
+            if (room < 30) {
                 return;
+            }
         }
 
     // Print values
@@ -592,31 +753,22 @@ static void cmsDrawMenu(displayPort_t *pDisplay, uint32_t currentTimeUs)
     // XXX Polled values at latter positions in the list may not be
     // XXX printed if not enough room in the middle of the list.
 
-        if (IS_PRINTVALUE(p)) {
+        if (IS_PRINTVALUE(runtimeEntryFlags[i]) || IS_SCROLLINGTICKER(runtimeEntryFlags[i])) {
             bool selectedRow = i == currentCtx.cursorRow;
-            room -= cmsDrawMenuEntry(pDisplay, p, top + i * linesPerMenuItem, selectedRow);
-            if (room < 30)
+            room -= cmsDrawMenuEntry(pDisplay, p, top + i * linesPerMenuItem, selectedRow, &runtimeEntryFlags[i], &runtimeTableTicker[i]);
+            if (room < 30) {
                 return;
+            }
         }
     }
 }
 
-static void cmsMenuCountPage(displayPort_t *pDisplay)
-{
-    UNUSED(pDisplay);
-    const OSD_Entry *p;
-    for (p = currentCtx.menu->entries; p->type != OME_END; p++);
-    pageCount = (p - currentCtx.menu->entries - 1) / maxMenuItems + 1;
-}
-
-STATIC_UNIT_TESTED long cmsMenuBack(displayPort_t *pDisplay); // Forward; will be resolved after merging
-
-long cmsMenuChange(displayPort_t *pDisplay, const void *ptr)
+const void *cmsMenuChange(displayPort_t *pDisplay, const void *ptr)
 {
     const CMS_Menu *pMenu = (const CMS_Menu *)ptr;
 
     if (!pMenu) {
-        return 0;
+        return NULL;
     }
 
 #ifdef CMS_MENU_DEBUG
@@ -632,15 +784,26 @@ long cmsMenuChange(displayPort_t *pDisplay, const void *ptr)
 #endif
 
     if (pMenu != currentCtx.menu) {
-        // Stack the current menu and move to a new menu.
+        saveMenuInhibited = false;
 
-        menuStack[menuStackIdx++] = currentCtx;
+        if (currentCtx.menu) {
+            // If we are opening the initial top-level menu, then currentCtx.menu will be NULL and nothing to do.
+            // Otherwise stack the current menu before moving to the selected menu.
+            if (menuStackIdx >= CMS_MENU_STACK_LIMIT - 1) {
+                // menu stack limit reached - prevent array overflow
+                return NULL;
+            }
+            menuStack[menuStackIdx++] = currentCtx;
+        }
 
         currentCtx.menu = pMenu;
         currentCtx.cursorRow = 0;
 
-        if (pMenu->onEnter && (pMenu->onEnter() == MENU_CHAIN_BACK)) {
-            return cmsMenuBack(pDisplay);
+        if (pMenu->onEnter) {
+            const void *result = pMenu->onEnter(pDisplay);
+            if (result == MENU_CHAIN_BACK) {
+                return cmsMenuBack(pDisplay);
+            }
         }
 
         cmsMenuCountPage(pDisplay);
@@ -655,46 +818,32 @@ long cmsMenuChange(displayPort_t *pDisplay, const void *ptr)
         cmsPageSelect(pDisplay, cursorAbs / maxMenuItems);
     }
 
+#if defined(CMS_PAGE_DEBUG)
     cmsPageDebug();
+#endif
 
-    return 0;
-}
-
-STATIC_UNIT_TESTED long cmsMenuBack(displayPort_t *pDisplay)
-{
-    // Let onExit function decide whether to allow exit or not.
-
-    if (currentCtx.menu->onExit && currentCtx.menu->onExit(pageTop + currentCtx.cursorRow) < 0) {
-        return -1;
-    }
-
-    if (!menuStackIdx) {
-        return 0;
-    }
-
-    currentCtx = menuStack[--menuStackIdx];
-
-    cmsMenuCountPage(pDisplay);
-    cmsPageSelect(pDisplay, currentCtx.page);
-
-    cmsPageDebug();
-
-    return 0;
+    return NULL;
 }
 
 void cmsMenuOpen(void)
 {
+    const CMS_Menu *startMenu;
     if (!cmsInMenu) {
         // New open
         pCurrentDisplay = cmsDisplayPortSelectCurrent();
-        if (!pCurrentDisplay)
+        if (!pCurrentDisplay) {
             return;
+        }
         cmsInMenu = true;
-        currentCtx = (cmsCtx_t){ &menuMain, 0, 0 };
+        currentCtx = (cmsCtx_t){ NULL, 0, 0 };
+        startMenu = &cmsx_menuMain;
+        menuStackIdx = 0;
         setArmingDisabled(ARMING_DISABLED_CMS_MENU);
+        displayLayerSelect(pCurrentDisplay, DISPLAYPORT_LAYER_FOREGROUND); // make sure the foreground layer is active
     } else {
         // Switch display
         displayPort_t *pNextDisplay = cmsDisplayPortSelectNext();
+        startMenu = currentCtx.menu;
         if (pNextDisplay != pCurrentDisplay) {
             // DisplayPort has been changed.
             // Convert cursorRow to absolute value
@@ -706,6 +855,10 @@ void cmsMenuOpen(void)
         }
     }
     displayGrab(pCurrentDisplay); // grab the display for use by the CMS
+    // FIXME this should probably not have a dependency on the OSD or OSD slave code
+#ifdef USE_OSD
+    resumeRefreshAt = 0;
+#endif
 
     if ( pCurrentDisplay->cols < NORMAL_SCREEN_MIN_COLS) {
       smallScreen       = true;
@@ -725,7 +878,13 @@ void cmsMenuOpen(void)
       maxMenuItems      = pCurrentDisplay->rows - 2;
     }
 
-    cmsMenuChange(pCurrentDisplay, currentCtx.menu);
+    if (pCurrentDisplay->useFullscreen) {
+    	leftMenuColumn = 0;
+    	rightMenuColumn   = pCurrentDisplay->cols;
+    	maxMenuItems      = pCurrentDisplay->rows;
+    }
+
+    cmsMenuChange(pCurrentDisplay, startMenu);
 }
 
 static void cmsTraverseGlobalExit(const CMS_Menu *pMenu)
@@ -738,7 +897,7 @@ static void cmsTraverseGlobalExit(const CMS_Menu *pMenu)
 
 }
 
-long cmsMenuExit(displayPort_t *pDisplay, const void *ptr)
+const void *cmsMenuExit(displayPort_t *pDisplay, const void *ptr)
 {
     int exitType = (int)ptr;
     switch (exitType) {
@@ -747,16 +906,17 @@ long cmsMenuExit(displayPort_t *pDisplay, const void *ptr)
     case CMS_POPUP_SAVE:
     case CMS_POPUP_SAVEREBOOT:
 
-        cmsTraverseGlobalExit(&menuMain);
+        cmsTraverseGlobalExit(&cmsx_menuMain);
 
-        if (currentCtx.menu->onExit)
-            currentCtx.menu->onExit((OSD_Entry *)NULL); // Forced exit
-        
+        if (currentCtx.menu->onExit) {
+            currentCtx.menu->onExit(pDisplay, (OSD_Entry *)NULL); // Forced exit
+        }
+
         if ((exitType == CMS_POPUP_SAVE) || (exitType == CMS_POPUP_SAVEREBOOT)) {
             // traverse through the menu stack and call their onExit functions
             for (int i = menuStackIdx - 1; i >= 0; i--) {
                 if (menuStack[i].menu->onExit) {
-                    menuStack[i].menu->onExit((OSD_Entry *)NULL);
+                    menuStack[i].menu->onExit(pDisplay, (OSD_Entry *)NULL);
                 }
             }
         }
@@ -773,14 +933,15 @@ long cmsMenuExit(displayPort_t *pDisplay, const void *ptr)
     displayRelease(pDisplay);
     currentCtx.menu = NULL;
 
-    if ((exitType == CMS_EXIT_SAVEREBOOT) || (exitType == CMS_POPUP_SAVEREBOOT)) {
+    if ((exitType == CMS_EXIT_SAVEREBOOT) || (exitType == CMS_POPUP_SAVEREBOOT) || (exitType == CMS_POPUP_EXITREBOOT)) {
         displayClearScreen(pDisplay);
-        displayWrite(pDisplay, 5, 3, "REBOOTING...");
+        cmsDisplayWrite(pDisplay, 5, 3, DISPLAYPORT_ATTR_NONE, "REBOOTING...");
 
-        displayResync(pDisplay); // Was max7456RefreshAll(); why at this timing?
+        // Flush display
+        displayRedraw(pDisplay);
 
         stopMotors();
-        stopPwmAllMotors();
+        motorShutdown();
         delay(200);
 
         systemReset();
@@ -788,7 +949,7 @@ long cmsMenuExit(displayPort_t *pDisplay, const void *ptr)
 
     unsetArmingDisabled(ARMING_DISABLED_CMS_MENU);
 
-    return 0;
+    return NULL;
 }
 
 // Stick/key detection and key codes
@@ -803,10 +964,11 @@ long cmsMenuExit(displayPort_t *pDisplay, const void *ptr)
 STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
 {
     uint16_t res = BUTTON_TIME;
-    OSD_Entry *p;
+    const OSD_Entry *p;
 
-    if (!currentCtx.menu)
+    if (!currentCtx.menu) {
         return res;
+    }
 
     if (key == CMS_KEY_MENU) {
         cmsMenuOpen();
@@ -822,9 +984,10 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         return BUTTON_PAUSE;
     }
 
-    if (key == CMS_KEY_SAVEMENU) {
+    if (key == CMS_KEY_SAVEMENU && !saveMenuInhibited) {
         osdElementEditing = false;
-        cmsMenuChange(pDisplay, &cmsx_menuSaveExit);
+        cmsMenuChange(pDisplay, getSaveExitMenu());
+
         return BUTTON_PAUSE;
     }
 
@@ -840,10 +1003,10 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
     if ((key == CMS_KEY_UP) && (!osdElementEditing)) {
         currentCtx.cursorRow--;
 
-        // Skip non-title labels
-        if ((pageTop + currentCtx.cursorRow)->type == OME_Label && currentCtx.cursorRow > 0)
+        // Skip non-title labels, strings and dynamic read-only entries
+        while ((rowIsSkippable(pageTop + currentCtx.cursorRow)) && currentCtx.cursorRow > 0) {
             currentCtx.cursorRow--;
-
+        }
         if (currentCtx.cursorRow == -1 || (pageTop + currentCtx.cursorRow)->type == OME_Label) {
             // Goto previous page
             cmsPagePrev(pDisplay);
@@ -851,8 +1014,9 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         }
     }
 
-    if ((key == CMS_KEY_DOWN || key == CMS_KEY_UP) && (!osdElementEditing))
+    if ((key == CMS_KEY_DOWN || key == CMS_KEY_UP) && (!osdElementEditing)) {
         return res;
+    }
 
     p = pageTop + currentCtx.cursorRow;
 
@@ -865,11 +1029,15 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
             break;
 
         case OME_Funcall:;
-            long retval;
+            const void *retval;
             if (p->func && key == CMS_KEY_RIGHT) {
                 retval = p->func(pDisplay, p->data);
-                if (retval == MENU_CHAIN_BACK)
+                if (retval == MENU_CHAIN_BACK) {
                     cmsMenuBack(pDisplay);
+                }
+                if ((p->flags & REBOOT_REQUIRED)) {
+                    setRebootRequired();
+                }
                 res = BUTTON_PAUSE;
             }
             break;
@@ -890,11 +1058,15 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         case OME_Bool:
             if (p->data) {
                 uint8_t *val = p->data;
-                if (key == CMS_KEY_RIGHT)
-                    *val = 1;
-                else
-                    *val = 0;
-                SET_PRINTVALUE(p);
+                const uint8_t previousValue = *val;
+                *val = (key == CMS_KEY_RIGHT) ? 1 : 0;
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*val != previousValue)) {
+                    setRebootRequired();
+                }
+                if (p->func) {
+                    p->func(pDisplay, p->data);
+                }
             }
             break;
 
@@ -902,6 +1074,7 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         case OME_VISIBLE:
             if (p->data) {
                 uint16_t *val = (uint16_t *)p->data;
+                const uint16_t previousValue = *val;
                 if ((key == CMS_KEY_RIGHT) && (!osdElementEditing)) {
                     osdElementEditing = true;
                     osdProfileCursor = 1;
@@ -925,7 +1098,10 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
                         *val &= ~OSD_PROFILE_FLAG(osdProfileCursor);
                     }
                 }
-                SET_PRINTVALUE(p);
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*val != previousValue)) {
+                    setRebootRequired();
+                }
             }
             break;
 #endif
@@ -934,15 +1110,20 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         case OME_FLOAT:
             if (p->data) {
                 OSD_UINT8_t *ptr = p->data;
+                const uint16_t previousValue = *ptr->val;
                 if (key == CMS_KEY_RIGHT) {
-                    if (*ptr->val < ptr->max)
+                    if (*ptr->val < ptr->max) {
                         *ptr->val += ptr->step;
-                }
-                else {
-                    if (*ptr->val > ptr->min)
+                    }
+                } else {
+                    if (*ptr->val > ptr->min) {
                         *ptr->val -= ptr->step;
+                    }
                 }
-                SET_PRINTVALUE(p);
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
                 if (p->func) {
                     p->func(pDisplay, p);
                 }
@@ -952,33 +1133,44 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         case OME_TAB:
             if (p->type == OME_TAB) {
                 OSD_TAB_t *ptr = p->data;
+                const uint8_t previousValue = *ptr->val;
 
                 if (key == CMS_KEY_RIGHT) {
-                    if (*ptr->val < ptr->max)
+                    if (*ptr->val < ptr->max) {
                         *ptr->val += 1;
-                }
-                else {
-                    if (*ptr->val > 0)
+                    }
+                } else {
+                    if (*ptr->val > 0) {
                         *ptr->val -= 1;
+                    }
                 }
-                if (p->func)
+                if (p->func) {
                     p->func(pDisplay, p->data);
-                SET_PRINTVALUE(p);
+                }
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
             }
             break;
 
         case OME_INT8:
             if (p->data) {
                 OSD_INT8_t *ptr = p->data;
+                const int8_t previousValue = *ptr->val;
                 if (key == CMS_KEY_RIGHT) {
-                    if (*ptr->val < ptr->max)
+                    if (*ptr->val < ptr->max) {
                         *ptr->val += ptr->step;
-                }
-                else {
-                    if (*ptr->val > ptr->min)
+                    }
+                } else {
+                    if (*ptr->val > ptr->min) {
                         *ptr->val -= ptr->step;
+                    }
                 }
-                SET_PRINTVALUE(p);
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
                 if (p->func) {
                     p->func(pDisplay, p);
                 }
@@ -988,15 +1180,20 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         case OME_UINT16:
             if (p->data) {
                 OSD_UINT16_t *ptr = p->data;
+                const uint16_t previousValue = *ptr->val;
                 if (key == CMS_KEY_RIGHT) {
-                    if (*ptr->val < ptr->max)
+                    if (*ptr->val < ptr->max) {
                         *ptr->val += ptr->step;
-                }
-                else {
-                    if (*ptr->val > ptr->min)
+                    }
+                } else {
+                    if (*ptr->val > ptr->min) {
                         *ptr->val -= ptr->step;
+                    }
                 }
-                SET_PRINTVALUE(p);
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
                 if (p->func) {
                     p->func(pDisplay, p);
                 }
@@ -1006,15 +1203,66 @@ STATIC_UNIT_TESTED uint16_t cmsHandleKey(displayPort_t *pDisplay, cms_key_e key)
         case OME_INT16:
             if (p->data) {
                 OSD_INT16_t *ptr = p->data;
+                const int16_t previousValue = *ptr->val;
                 if (key == CMS_KEY_RIGHT) {
-                    if (*ptr->val < ptr->max)
+                    if (*ptr->val < ptr->max) {
                         *ptr->val += ptr->step;
-                }
-                else {
-                    if (*ptr->val > ptr->min)
+                    }
+                } else {
+                    if (*ptr->val > ptr->min) {
                         *ptr->val -= ptr->step;
+                    }
                 }
-                SET_PRINTVALUE(p);
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
+                if (p->func) {
+                    p->func(pDisplay, p);
+                }
+            }
+            break;
+
+        case OME_UINT32:
+            if (p->data) {
+                OSD_UINT32_t *ptr = p->data;
+                const uint32_t previousValue = *ptr->val;
+                if (key == CMS_KEY_RIGHT) {
+                    if (*ptr->val < ptr->max) {
+                        *ptr->val += ptr->step;
+                    }
+                } else {
+                    if (*ptr->val > ptr->min) {
+                        *ptr->val -= ptr->step;
+                    }
+                }
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
+                if (p->func) {
+                    p->func(pDisplay, p);
+                }
+            }
+            break;
+
+        case OME_INT32:
+            if (p->data) {
+                OSD_INT32_t *ptr = p->data;
+                const int32_t previousValue = *ptr->val;
+                if (key == CMS_KEY_RIGHT) {
+                    if (*ptr->val < ptr->max) {
+                        *ptr->val += ptr->step;
+                    }
+                } else {
+                    if (*ptr->val > ptr->min) {
+                        *ptr->val -= ptr->step;
+                    }
+                }
+                SET_PRINTVALUE(runtimeEntryFlags[currentCtx.cursorRow]);
+                if ((p->flags & REBOOT_REQUIRED) && (*ptr->val != previousValue)) {
+                    setRebootRequired();
+                }
                 if (p->func) {
                     p->func(pDisplay, p);
                 }
@@ -1052,18 +1300,18 @@ uint16_t cmsHandleKeyWithRepeat(displayPort_t *pDisplay, cms_key_e key, int repe
     return ret;
 }
 
-void cmsUpdate(uint32_t currentTimeUs)
+static void cmsUpdate(uint32_t currentTimeUs)
 {
+    if (IS_RC_MODE_ACTIVE(BOXPARALYZE)
 #ifdef USE_RCDEVICE
-    if(rcdeviceInMenu) {
-        return ;
-    }
+        || rcdeviceInMenu
 #endif
 #ifdef USE_USB_CDC_HID
-    if (getBatteryCellCount() == 0 && usbDevConfig()->type == COMPOSITE) {
+        || cdcDeviceIsMayBeActive() // If this target is used as a joystick, we should leave here.
+#endif
+       ) {
         return;
     }
-#endif
 
     static int16_t rcDelayMs = BUTTON_TIME;
     static int holdCount = 1;
@@ -1077,7 +1325,7 @@ void cmsUpdate(uint32_t currentTimeUs)
 
     if (!cmsInMenu) {
         // Detect menu invocation
-        if (IS_MID(THROTTLE) && IS_LO(YAW) && IS_HI(PITCH) && !ARMING_FLAG(ARMED)) {
+        if (IS_MID(THROTTLE) && IS_LO(YAW) && IS_HI(PITCH) && !ARMING_FLAG(ARMED) && !IS_RC_MODE_ACTIVE(BOXSTICKCOMMANDDISABLE)) {
             cmsMenuOpen();
             rcDelayMs = BUTTON_PAUSE;    // Tends to overshoot if BUTTON_TIME
         }
@@ -1094,25 +1342,17 @@ void cmsUpdate(uint32_t currentTimeUs)
         } else {
             if (IS_MID(THROTTLE) && IS_LO(YAW) && IS_HI(PITCH) && !ARMING_FLAG(ARMED)) {
                 key = CMS_KEY_MENU;
-            }
-            else if (IS_HI(PITCH)) {
+            } else if (IS_HI(PITCH)) {
                 key = CMS_KEY_UP;
-            }
-            else if (IS_LO(PITCH)) {
+            } else if (IS_LO(PITCH)) {
                 key = CMS_KEY_DOWN;
-            }
-            else if (IS_LO(ROLL)) {
+            } else if (IS_LO(ROLL)) {
                 key = CMS_KEY_LEFT;
-            }
-            else if (IS_HI(ROLL)) {
+            } else if (IS_HI(ROLL)) {
                 key = CMS_KEY_RIGHT;
-            }
-            else if (IS_LO(YAW))
-            {
+            } else if (IS_LO(YAW)) {
                 key = CMS_KEY_ESC;
-            }
-            else if (IS_HI(YAW))
-            {
+            } else if (IS_HI(YAW)) {
                 key = CMS_KEY_SAVEMENU;
             }
 
@@ -1153,8 +1393,9 @@ void cmsUpdate(uint32_t currentTimeUs)
 
                         // start calling handler multiple times.
 
-                        if (repeatBase == 0)
+                        if (repeatBase == 0) {
                             repeatBase = holdCount;
+                        }
 
                         repeatCount = repeatCount + (holdCount - repeatBase) / 5;
 
@@ -1184,15 +1425,7 @@ void cmsUpdate(uint32_t currentTimeUs)
 
 void cmsHandler(timeUs_t currentTimeUs)
 {
-    if (cmsDeviceCount < 0)
-        return;
-
-
-
-    static timeUs_t lastCalledUs = 0;
-
-    if (currentTimeUs >= lastCalledUs + CMS_UPDATE_INTERVAL_US) {
-        lastCalledUs = currentTimeUs;
+    if (cmsDeviceCount > 0) {
         cmsUpdate(currentTimeUs);
     }
 }
@@ -1201,6 +1434,20 @@ void cmsInit(void)
 {
     cmsDeviceCount = 0;
     cmsCurrentDevice = -1;
+}
+
+void inhibitSaveMenu(void)
+{
+    saveMenuInhibited = true;
+}
+
+void cmsAddMenuEntry(OSD_Entry *menuEntry, char *text, OSD_MenuElement type, CMSEntryFuncPtr func, void *data, uint8_t flags)
+{
+        menuEntry->text = text;
+        menuEntry->type = type;
+        menuEntry->func = func;
+        menuEntry->data = data;
+        menuEntry->flags = flags;
 }
 
 #endif // CMS

@@ -21,7 +21,7 @@
 #pragma once
 
 #define TARGET_BOARD_IDENTIFIER "S411" // STM Discovery F411
-#define USBD_PRODUCT_STRING     "DISCF411"
+#define USBD_PRODUCT_STRING     "STM32F411DISCOVERY"
 
 #define USE_SENSOR_NAMES
 
@@ -63,7 +63,6 @@
 
 #define MPU_I2C_INSTANCE        (I2CDEV_1)
 #define USE_ACC_LSM303DLHC
-#define ACC_1_ALIGN             CW0_DEG
 
 #define USE_MAG
 #define USE_MAG_HMC5883

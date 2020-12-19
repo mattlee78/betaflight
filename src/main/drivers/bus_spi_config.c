@@ -39,8 +39,6 @@
 #include "pg/rx_spi.h"
 #include "pg/sdcard.h"
 
-#include "sensors/initialisation.h"
-
 typedef struct spiPreinit_s {
     ioTag_t iotag;
     uint8_t iocfg;
@@ -81,8 +79,6 @@ static void spiPreinitPin(spiPreinit_t *preinit, int index)
 
 void spiPreinit(void)
 {
-    sensorsPreInit();
-
 #ifdef USE_SDCARD_SPI
     sdcard_preInit(sdcardConfig());
 #endif
@@ -95,7 +91,7 @@ void spiPreinit(void)
     flashPreInit(flashConfig());
 #endif
 
-#if defined(USE_RX_SPI) && !defined(USE_RX_SOFTSPI)
+#if defined(USE_RX_SPI)
     rxSpiDevicePreInit(rxSpiConfig());
 #endif
 

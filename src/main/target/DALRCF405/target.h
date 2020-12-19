@@ -21,7 +21,7 @@
 #pragma once
 
 #define TARGET_BOARD_IDENTIFIER "DLF4"
-#define USBD_PRODUCT_STRING  "DALRCF405"
+#define USBD_PRODUCT_STRING     "DALRCF405"
 //----------------------------------------
 
 //LED & BEE------------------------------- 
@@ -48,16 +48,14 @@
 #define USE_ACC
 #define GYRO_1_CS_PIN           PA4
 #define GYRO_1_SPI_INSTANCE     SPI1
-#define GYRO_1_ALIGN            CW90_DEG
-#define ACC_1_ALIGN             CW90_DEG
 
-//------ICM20689
 #define USE_GYRO_SPI_ICM20689
 #define USE_ACC_SPI_ICM20689
-
 //------MPU6000
 #define USE_GYRO_SPI_MPU6000
 #define USE_ACC_SPI_MPU6000
+
+#define GYRO_1_ALIGN            CW90_DEG
 
 //Baro & MAG------------------------------- 
 #define USE_I2C
@@ -141,7 +139,7 @@
 #define DEFAULT_VOLTAGE_METER_SOURCE    VOLTAGE_METER_ADC
 #define DEFAULT_CURRENT_METER_SOURCE    CURRENT_METER_ADC
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define USE_ESCSERIAL
 #define ESCSERIAL_TIMER_TX_PIN PA3
@@ -151,9 +149,5 @@
 #define TARGET_IO_PORTC         0xffff
 #define TARGET_IO_PORTD         (BIT(2))
 
-
 #define USABLE_TIMER_CHANNEL_COUNT 11
 #define USED_TIMERS             (TIM_N(1)|TIM_N(2)|TIM_N(3)|TIM_N(4)|TIM_N(8)|TIM_N(12))
-
-
-

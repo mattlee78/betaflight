@@ -74,6 +74,9 @@ typedef enum {
     BOXACROTRAINER,
     BOXVTXCONTROLDISABLE,
     BOXLAUNCHCONTROL,
+    BOXMSPOVERRIDE,
+    BOXSTICKCOMMANDDISABLE,
+    BOXBEEPERMUTE,
     CHECKBOX_ITEM_COUNT
 } boxId_e;
 
@@ -115,6 +118,20 @@ typedef struct modeActivationCondition_s {
 
 PG_DECLARE_ARRAY(modeActivationCondition_t, MAX_MODE_ACTIVATION_CONDITION_COUNT, modeActivationConditions);
 
+#if defined(USE_CUSTOM_BOX_NAMES)
+
+#define MAX_BOX_USER_NAME_LENGTH 16
+
+typedef struct modeActivationConfig_s {
+    char box_user_1_name[MAX_BOX_USER_NAME_LENGTH];
+    char box_user_2_name[MAX_BOX_USER_NAME_LENGTH];
+    char box_user_3_name[MAX_BOX_USER_NAME_LENGTH];
+    char box_user_4_name[MAX_BOX_USER_NAME_LENGTH];
+} modeActivationConfig_t;
+
+PG_DECLARE(modeActivationConfig_t, modeActivationConfig);
+#endif
+
 typedef struct modeActivationProfile_s {
     modeActivationCondition_t modeActivationConditions[MAX_MODE_ACTIVATION_CONDITION_COUNT];
 } modeActivationProfile_t;
@@ -129,4 +146,7 @@ bool airmodeIsEnabled(void);
 bool isRangeActive(uint8_t auxChannelIndex, const channelRange_t *range);
 void updateActivatedModes(void);
 bool isModeActivationConditionPresent(boxId_e modeId);
+bool isModeActivationConditionLinked(boxId_e modeId);
 void removeModeActivationCondition(boxId_e modeId);
+bool isModeActivationConditionConfigured(const modeActivationCondition_t *mac, const modeActivationCondition_t *emptyMac);
+void analyzeModeActivationConditions(void);

@@ -32,24 +32,55 @@
 
 #include "config/feature.h"
 
-#include "fc/config.h"
+#include "config/config.h"
 
-static OSD_Entry cmsx_menuSaveExitEntries[] =
+static const OSD_Entry cmsx_menuSaveExitEntries[] =
 {
     { "-- SAVE/EXIT --", OME_Label, NULL, NULL, 0},
-    {"EXIT",        OME_OSD_Exit, cmsMenuExit,   (void *)CMS_EXIT, 0},
-    {"SAVE&EXIT",   OME_OSD_Exit, cmsMenuExit,   (void *)CMS_POPUP_SAVE, 0},
-    {"SAVE&REBOOT", OME_OSD_Exit, cmsMenuExit,   (void *)CMS_POPUP_SAVEREBOOT, 0},
+    { "EXIT",            OME_OSD_Exit, cmsMenuExit,   (void *)CMS_EXIT, 0},
+    { "SAVE&EXIT",       OME_OSD_Exit, cmsMenuExit,   (void *)CMS_POPUP_SAVE, 0},
+    { "SAVE&REBOOT",     OME_OSD_Exit, cmsMenuExit,   (void *)CMS_POPUP_SAVEREBOOT, 0},
     { "BACK", OME_Back, NULL, NULL, 0 },
     { NULL, OME_END, NULL, NULL, 0 }
 };
 
-CMS_Menu cmsx_menuSaveExit = {
+static CMS_Menu cmsx_menuSaveExit = {
 #ifdef CMS_MENU_DEBUG
     .GUARD_text = "MENUSAVE",
     .GUARD_type = OME_MENU,
 #endif
+    .onEnter = NULL,
+    .onExit = NULL,
+    .onDisplayUpdate = NULL,
     .entries = cmsx_menuSaveExitEntries
 };
 
+static const OSD_Entry cmsx_menuSaveExitRebootEntries[] =
+{
+    { "-- SAVE/EXIT (REBOOT REQD)", OME_Label, NULL, NULL, 0},
+    { "EXIT&REBOOT", OME_OSD_Exit, cmsMenuExit,   (void *)CMS_POPUP_EXITREBOOT, 0},
+    { "SAVE&REBOOT", OME_OSD_Exit, cmsMenuExit,   (void *)CMS_POPUP_SAVEREBOOT, 0},
+    { "BACK", OME_Back, NULL, NULL, 0 },
+    { NULL, OME_END, NULL, NULL, 0 }
+};
+
+static CMS_Menu cmsx_menuSaveExitReboot = {
+#ifdef CMS_MENU_DEBUG
+    .GUARD_text = "MENUSAVE",
+    .GUARD_type = OME_MENU,
+#endif
+    .onEnter = NULL,
+    .onExit = NULL,
+    .onDisplayUpdate = NULL,
+    .entries = cmsx_menuSaveExitRebootEntries
+};
+
+CMS_Menu *getSaveExitMenu(void)
+{
+   if (getRebootRequired()) {
+        return &cmsx_menuSaveExitReboot;
+    } else {
+        return &cmsx_menuSaveExit;
+    }
+}
 #endif

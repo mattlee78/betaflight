@@ -201,7 +201,7 @@ enum {
 };
 #define CYRF6936_DATA_CODE_LENGTH (1<<5)
 
-extern volatile bool isError;
+extern bool isError;
 
 bool cyrf6936Init(void);
 

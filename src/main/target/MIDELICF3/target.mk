@@ -2,7 +2,7 @@ F3_TARGETS  += $(TARGET)
 
 FEATURES  = VCP SDCARD_SPI
 
-FEATURE_CUT_LEVEL = 4
+FEATURE_CUT_LEVEL = 6
 
 TARGET_SRC = \
             drivers/accgyro/accgyro_mpu.c \
@@ -12,4 +12,5 @@ TARGET_SRC = \
             rx/cc2500_frsky_shared.c \
             rx/cc2500_frsky_d.c \
             rx/cc2500_frsky_x.c \
-            rx/cc2500_sfhss.c
+            rx/cc2500_sfhss.c \
+            rx/cc2500_redpine.c            

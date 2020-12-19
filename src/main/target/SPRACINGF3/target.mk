@@ -12,13 +12,13 @@ TARGET_SRC = \
             drivers/compass/compass_qmc5883l.c
 
 ifeq ($(TARGET), FLIP32F3OSD)
-FEATURE_CUT_LEVEL = 1
+FEATURE_CUT_LEVEL = 2
 
 TARGET_SRC += \
             drivers/accgyro/accgyro_mpu6500.c
 else
 ifeq ($(TARGET), ZCOREF3)
-FEATURE_CUT_LEVEL = 1
+FEATURE_CUT_LEVEL = 2
 
 TARGET_SRC += \
             drivers/accgyro/accgyro_mpu6500.c \
@@ -30,7 +30,7 @@ FEATURE_CUT_LEVEL = 1
 TARGET_SRC += \
 			drivers/accgyro/accgyro_spi_mpu6000.c
 else
-FEATURE_CUT_LEVEL = 3
+FEATURE_CUT_LEVEL = 6
 
 TARGET_SRC += \
             drivers/accgyro/accgyro_mpu6050.c

@@ -22,6 +22,20 @@
 
 #define TARGET_BOARD_IDENTIFIER "MIF3"
 
+
+#undef USE_SERIAL_RX
+#undef USE_CRSF_CMS_TELEMETRY
+#undef USE_TELEMETRY_CRSF
+#undef USE_TELEMETRY_GHST
+#undef USE_TELEMETRY_HOTT
+#undef USE_TELEMETRY_IBUS
+#undef USE_TELEMETRY_IBUS_EXTENDED
+#undef USE_TELEMETRY_JETIEXBUS
+#undef USE_TELEMETRY_LTM
+#undef USE_TELEMETRY_MAVLINK
+#undef USE_TELEMETRY_SRXL
+#undef USE_PWM
+
 #undef USE_GYRO_OVERFLOW_CHECK
 
 #define LED0_PIN                PB5
@@ -35,7 +49,6 @@
 
 #define USE_ACC
 #define USE_ACC_MPU6050
-#define ACC_1_ALIGN             CW270_DEG
 
 #define USE_EXTI
 #define USE_GYRO_EXTI
@@ -98,15 +111,16 @@
 #define USE_RX_FRSKY_SPI_D
 #define USE_RX_FRSKY_SPI_X
 #define USE_RX_SFHSS_SPI
+#define USE_RX_REDPINE_SPI
 #define DEFAULT_RX_FEATURE      FEATURE_RX_SPI
 #define RX_SPI_DEFAULT_PROTOCOL RX_SPI_FRSKY_X
 #define USE_RX_FRSKY_SPI_TELEMETRY
 
-#define RX_NSS_PIN               PA4
+#define RX_NSS_PIN              PA4
 
-#define RX_CC2500_SPI_GDO_0_PIN   PB0
+#define RX_SPI_EXTI_PIN         PB0
 
-#define RX_SPI_LED_PIN            PB6
+#define RX_SPI_LED_PIN          PB6
 
 #define USE_RX_CC2500_SPI_PA_LNA
 
@@ -118,8 +132,7 @@
 
 #define RX_CC2500_SPI_ANT_SEL_PIN PB2
 
-
-#define BINDPLUG_PIN             PC13
+#define RX_SPI_BIND_PIN          PC13
 
 #define USE_ESCSERIAL
 #define ESCSERIAL_TIMER_TX_PIN   PB9 // Motor 6, can't use escserial for hexa

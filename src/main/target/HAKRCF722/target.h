@@ -61,7 +61,6 @@
 
 #define USE_ACC
 #define USE_ACC_SPI_MPU6000
-#define ACC_1_ALIGN             CW270_DEG
 
 #define LED0_PIN                PC13
 
@@ -86,7 +85,7 @@
 #define FLASH_CS_PIN           PB12
 #define FLASH_SPI_INSTANCE     SPI2          
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define USE_VCP
 

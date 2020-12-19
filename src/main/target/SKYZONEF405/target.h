@@ -25,7 +25,7 @@
 
 #define USBD_PRODUCT_STRING     "skyzone F405"
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define LED0_PIN                PC14
 
@@ -56,7 +56,6 @@
 #define GYRO_1_SPI_INSTANCE     SPI1
 
 #define GYRO_1_ALIGN            CW90_DEG
-#define ACC_1_ALIGN             CW90_DEG
 
 #define USE_I2C
 #define USE_I2C_DEVICE_1

@@ -377,6 +377,7 @@ int32_t getSensorValue(uint8_t sensor)
     break;
 #endif
 
+#if defined(USE_ACC)
     case EX_GFORCE_X:
        return (int16_t)(((float)acc.accADC[0] / acc.dev.acc_1G) * 1000);
     break;
@@ -388,6 +389,7 @@ int32_t getSensorValue(uint8_t sensor)
     case EX_GFORCE_Z:
         return (int16_t)(((float)acc.accADC[2] / acc.dev.acc_1G) * 1000);
     break;
+#endif
 
     default:
         return -1;
@@ -535,12 +537,12 @@ uint8_t sendJetiExBusTelemetry(uint8_t packetID, uint8_t item)
             if (featureIsEnabled(FEATURE_GPS)) {
                 enableGpsTelemetry(false);
                 allSensorsActive = false;
-            }   
+            }
         }
     } else {
         item = createExTelemetryValueMessage(jetiExTelemetryFrame, item);
         createExBusMessage(jetiExBusTelemetryFrame, jetiExTelemetryFrame, packetID);
-        
+
         if (!allSensorsActive) {
             if (sensors(SENSOR_GPS)) {
                 enableGpsTelemetry(true);

@@ -23,7 +23,7 @@
 
 #define USBD_PRODUCT_STRING     "YUPIF7"
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define LED0_PIN                PB4
 
@@ -51,7 +51,6 @@
 
 #define USE_ACC
 #define USE_ACC_SPI_ICM20689
-#define ACC_1_ALIGN             CW90_DEG
 
 #define USE_GYRO
 #define USE_GYRO_SPI_ICM20689
